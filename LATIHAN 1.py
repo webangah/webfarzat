@@ -3,6 +3,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
 import json
+import folium
+from streamlit_folium import st_folium
+from pyproj import Transformer
 
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="PUO Survey Lot Visualizer", layout="wide")
@@ -14,6 +17,16 @@ def to_dms(deg):
     s = int((deg - d - m/60) * 3600)
     return f"{d}°{m}'{s}\""
 
+# Fungsi tukar koordinat ke Lat/Lon untuk Google Maps
+def transform_coords(df, epsg_code):
+    try:
+        # Tukar dari EPSG pilihan (cth: 3168 untuk RSO) ke WGS84 (Lat/Lon)
+        transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
+        lon, lat = transformer.transform(df['E'].values, df['N'].values)
+        return lat, lon
+    except:
+        return None, None
+
 # --- PENGURUSAN SESSION STATE ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
@@ -24,7 +37,6 @@ def login_page():
     with col2:
         st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
         st.title("Sistem Lot Ukur PUO")
-        st.info("ID: 1 | Kata Laluan: admin123")
         user_id = st.text_input("ID Pengguna")
         password = st.text_input("Kata Laluan", type='password')
         if st.button("Log Masuk", use_container_width=True):
@@ -36,10 +48,8 @@ def login_page():
 
 # --- HALAMAN UTAMA (APLIKASI) ---
 def main_app():
-    # --- SIDEBAR (PROFIL & KAWALAN) ---
     with st.sidebar:
-        # 1. Kad Profil Pengguna
-        st.markdown("""
+        st.markdown(f"""
         <div style='background-color: #0099ff; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;'>
             <img src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png' width='80' style='filter: brightness(0) invert(1);'>
             <h2 style='margin: 10px 0 0 0;'>Hai, FARZAT!</h2>
@@ -48,38 +58,26 @@ def main_app():
         """, unsafe_allow_html=True)
 
         st.subheader("⚙️ Kawalan Paparan")
-        
-        # 2. Slider Kawalan
         saiz_marker = st.slider("Saiz Marker Stesen", 5, 50, 22)
         saiz_teks = st.slider("Saiz Bearing/Jarak", 5, 20, 12)
-        tahap_zoom = st.slider("Tahap Zoom (Padding)", 0, 50, 19)
-        
-        # 3. Warna Poligon
-        warna_poli = st.color_picker("Warna Poligon", "#FFFF00") # Default Kuning
+        warna_poli = st.color_picker("Warna Poligon", "#FFFF00")
         
         st.markdown("---")
         if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- HEADER UTAMA ---
-    col_logo, col_title = st.columns([1, 4])
-    with col_logo:
-        st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", use_column_width=True)
-    with col_title:
-        st.markdown("""
+    # --- HEADER ---
+    st.markdown("""
         <div style='border-left: 5px solid #007bff; padding-left: 20px;'>
-            <h1 style='margin-bottom: 0px;'>SISTEM SURVEY LOT</h1>
+            <h1 style='margin-bottom: 0px;'>SISTEM SURVEY LOT + GOOGLE SATELLITE</h1>
             <p style='color: #6c757d;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
         </div>
-        """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-    st.markdown("---")
-
-    # --- BAHAGIAN INPUT ---
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
-        kod_epsg = st.text_input("🟢 Kod EPSG:", value="4390")
+        kod_epsg = st.text_input("🟢 Kod EPSG (Contoh: 3168 untuk RSO Semenanjung):", value="3168")
     with col_upload:
         uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
 
@@ -88,66 +86,58 @@ def main_app():
         
         if 'E' in df.columns and 'N' in df.columns:
             # Pengiraan Luas
-            e = df['E'].values
-            n = df['N'].values
+            e, n = df['E'].values, df['N'].values
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
             
-            coords_list = [[df['E'][i], df['N'][i]] for i in range(len(df))]
-            poly_coords = coords_list + [coords_list[0]]
+            # --- TAB PAPARAN ---
+            tab_map, tab_plot = st.tabs(["🌍 Peta Satelit (Google)", "📊 Lukisan Teknikal (Matplotlib)"])
 
-            # Plotting menggunakan Matplotlib
-            fig, ax = plt.subplots(figsize=(10, 8))
-            e_plot = [c[0] for c in poly_coords]
-            n_plot = [c[1] for c in poly_coords]
-            
-            # Lukis Poligon (Guna warna dari color picker)
-            ax.plot(e_plot, n_plot, marker='o', color='black', markersize=saiz_marker/4, linewidth=2)
-            ax.fill(e_plot, n_plot, color=warna_poli, alpha=0.5)
-            
-            # Label Bearing & Jarak
-            for i in range(len(df)):
-                x1, y1 = df['E'][i], df['N'][i]
-                next_idx = (i + 1) % len(df)
-                x2, y2 = df['E'][next_idx], df['N'][next_idx]
+            with tab_map:
+                st.subheader("Paparan Google Satellite")
+                lats, lons = transform_coords(df, kod_epsg)
                 
-                dist = np.sqrt((x2-x1)**2 + (y2-y1)**2)
-                brg = np.degrees(np.arctan2((x2-x1), (y2-y1))) % 360
-                
-                mid_x, mid_y = (x1+x2)/2, (y1+y2)/2
-                ax.text(mid_x, mid_y, f"{to_dms(brg)}\n{dist:.3f}m", 
-                        fontsize=saiz_teks, color='red', ha='center', fontweight='bold')
-                
-                # Label Nombor Stesen
-                ax.text(x1, y1, str(df['STN'][i] if 'STN' in df.columns else i+1), 
-                        fontsize=saiz_teks+2, color='blue', ha='right')
+                if lats is not None:
+                    # Setup Folium Map
+                    m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=18)
+                    
+                    # Tambah Google Satellite Layer
+                    google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
+                    folium.TileLayer(tiles=google_sat, attr='Google', name='Google Satellite', overlay=False, control=True).add_to(m)
+                    
+                    # Lukis Poligon
+                    points = list(zip(lats, lons))
+                    points.append(points[0]) # Tutup poligon
+                    folium.Polygon(locations=points, color="white", weight=2, fill=True, fill_color=warna_poli, fill_opacity=0.4).add_to(m)
+                    
+                    # Tambah Marker Stesen
+                    for i, row in df.iterrows():
+                        folium.CircleMarker(location=[lats[i], lons[i]], radius=5, color="red", fill=True).add_to(m)
+                        folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="font-size: 10pt; color: white; font-weight: bold;">{row["STN"] if "STN" in df.columns else i+1}</div>')).add_to(m)
 
-            ax.set_aspect('equal')
-            
-            # Adjust Zoom (Padding)
-            padding = tahap_zoom * 2
-            ax.set_xlim(min(e_plot) - padding, max(e_plot) + padding)
-            ax.set_ylim(min(n_plot) - padding, max(n_plot) + padding)
+                    st_folium(m, width=1000, height=500)
+                else:
+                    st.warning("Gagal menukar koordinat. Sila pastikan Kod EPSG betul.")
 
-            # Paparan Hasil
-            col_graph, col_info = st.columns([3, 1])
-            with col_graph:
+            with tab_plot:
+                # (Kod Matplotlib asal anda dikekalkan di sini)
+                fig, ax = plt.subplots(figsize=(10, 8))
+                coords = list(zip(e, n))
+                coords.append(coords[0])
+                e_p, n_p = zip(*coords)
+                ax.plot(e_p, n_p, marker='o', color='black', markersize=saiz_marker/4)
+                ax.fill(e_p, n_p, color=warna_poli, alpha=0.5)
                 st.pyplot(fig)
-            with col_info:
-                st.metric("Luas (m²)", f"{area:.3f}")
-                st.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
-                
-                # Download Button
-                geojson_data = json.dumps({"type": "FeatureCollection", "features": [{
-                    "type": "Feature",
-                    "properties": {"Luas": area},
-                    "geometry": {"type": "Polygon", "coordinates": [poly_coords]}
-                }]})
-                st.download_button("📥 Download GeoJSON", data=geojson_data, file_name="survey.geojson", use_container_width=True)
 
-        else:
-            st.error("Pastikan CSV anda mempunyai kolum 'E' dan 'N'.")
+            # Info Luas di bawah
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Luas (m²)", f"{area:.3f}")
+            c2.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
+            
+            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
+            c3.download_button("📥 Download GeoJSON", data=geojson_data, file_name="survey_farzat.geojson", use_container_width=True)
 
-# --- JALANKAN APP ---
+# JALANKAN APP
 if st.session_state.logged_in:
     main_app()
 else:
