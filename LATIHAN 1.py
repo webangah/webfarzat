@@ -74,14 +74,12 @@ def login_page():
 # --- HALAMAN UTAMA ---
 def main_app():
     with st.sidebar:
-        # Profil Sidebar (Rujukan image_ab3657.jpg)
         prof_img = get_base64_image("WhatsApp Image 2026-03-12 at 1.42.22 AM.jpeg")
         if prof_img:
             st.markdown(f"""
                 <div style='text-align: center; background: linear-gradient(135deg, #00b4ff, #007bff); padding: 20px; border-radius: 15px; color: white; margin-bottom: 20px;'>
                     <img src='data:image/jpeg;base64,{prof_img}' width='100' style='border-radius: 50%; border: 3px solid white; height: 100px; object-fit: cover;'>
                     <h3 style='margin:10px 0 0 0;'>Hai, FARZAT!</h3>
-                    <p style='font-size: 12px; margin:0;'>FARZAT BIN SURVEYOR</p>
                 </div>
             """, unsafe_allow_html=True)
         
@@ -93,13 +91,7 @@ def main_app():
             st.session_state.logged_in = False
             st.rerun()
 
-    # Header Dashboard (Rujukan image_b541ff.png)
-    st.markdown("""
-        <div class="main-header">
-            <h1 style='margin:0;'>SISTEM SURVEY LOT + GOOGLE MAPS</h1>
-            <p style='margin:0; color: #666;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
-        </div>
-    """, unsafe_allow_html=True)
+    st.markdown(f'<div class="main-header"><h1>SISTEM SURVEY LOT + GOOGLE MAPS</h1><p>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p></div>', unsafe_allow_html=True)
 
     col_epsg, col_file = st.columns(2)
     with col_epsg:
@@ -113,7 +105,6 @@ def main_app():
             e, n = df['E'].values, df['N'].values
             lats, lons = transform_coords(df, epsg)
             
-            # Pengiraan Luas & Perimeter
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
             dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
             perimeter = sum(dist_list)
@@ -122,37 +113,56 @@ def main_app():
             
             with tab1:
                 m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20)
-                folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
-                                 attr='Google', name='Google Hybrid', max_zoom=24).add_to(m)
+                folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Hybrid', max_zoom=24).add_to(m)
                 
                 points = list(zip(lats, lons))
                 folium.Polygon(locations=points + [points[0]], color=warna_poli, weight=3, fill=True, fill_opacity=0.3).add_to(m)
 
-                # Info Lot Popup (Rujukan image_a9f09a.jpg)
-                popup_html = f"""
-                <div style='font-family: Arial; width: 160px;'>
-                    <h4 style='color:#007bff; margin-bottom:5px;'>📍 Info Lot</h4>
-                    <b>Surveyor:</b> FARZAT<br>
-                    <b>Luas:</b> {area:.3f} m²<br>
-                    <b>Perimeter:</b> {perimeter:.3f} m
-                </div>
-                """
-                folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='red', icon='info-sign'), popup=folium.Popup(popup_html, max_width=200)).add_to(m)
-
-                # Label Bearing & Jarak (Rujukan image_aa551e.jpg)
+                # --- POPUP SETIAP STESEN (MODIFIKASI BARU) ---
                 for i in range(len(df)):
-                    p1, p2 = [lats[i], lons[i]], [lats[(i+1)%len(df)], lons[(i+1)%len(df)]]
+                    p_lat, p_lon = lats[i], lons[i]
+                    stn_name = str(df['STN'].iloc[i]) if 'STN' in df.columns else str(i+1)
+                    val_e = df['E'].iloc[i]
+                    val_n = df['N'].iloc[i]
+
+                    # HTML untuk Popup sebijik macam rujukan
+                    stn_popup_html = f"""
+                    <div style="font-family: Arial; font-size: 12pt; min-width: 150px;">
+                        <b>STESEN {stn_name}</b><br>
+                        E: {val_e:.3f}<br>
+                        N: {val_n:.3f}
+                    </div>
+                    """
+                    
+                    # Marker Stesen Merah dengan Popup
+                    folium.CircleMarker(
+                        [p_lat, p_lon], 
+                        radius=saiz_marker/4, 
+                        color="red", 
+                        fill=True, 
+                        fill_opacity=1,
+                        popup=folium.Popup(stn_popup_html, max_width=250)
+                    ).add_to(m)
+
+                    # Nombor Stesen di atas marker
+                    folium.Marker(
+                        [p_lat, p_lon], 
+                        icon=folium.DivIcon(html=f"<div style='color:white; font-weight:bold; font-size:10pt; transform:translate(-3px,-7px); pointer-events:none;'>{stn_name}</div>")
+                    ).add_to(m)
+
+                    # --- LABEL BEARING & JARAK (KUNING) ---
+                    next_i = (i + 1) % len(df)
+                    p1, p2 = [lats[i], lons[i]], [lats[next_i], lons[next_i]]
                     dist = dist_list[i]
-                    brg = np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
+                    brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
                     m_lat, m_lon = (p1[0]+p2[0])/2, (p1[1]+p2[1])/2
                     
                     label_html = f'<div style="color:#FFFF00; font-size:{saiz_teks}pt; text-shadow:2px 2px #000; font-weight:bold; text-align:center;">{to_dms(brg)}<br>{dist:.3f}m</div>'
                     folium.Marker([m_lat, m_lon], icon=folium.DivIcon(html=label_html)).add_to(m)
-                    
-                    # Marker Stesen Merah
-                    stn_id = str(df['STN'].iloc[i]) if 'STN' in df.columns else str(i+1)
-                    folium.CircleMarker(p1, radius=saiz_marker/4, color="red", fill=True, fill_opacity=1).add_to(m)
-                    folium.Marker(p1, icon=folium.DivIcon(html=f"<div style='color:white; font-weight:bold; font-size:10pt; transform:translate(-3px,-7px);'>{stn_id}</div>")).add_to(m)
+
+                # Info Lot Utama (Popup Surveyor)
+                lot_info_html = f"<div style='width:160px;'><b>📍 Info Lot</b><br>Surveyor: FARZAT<br>Luas: {area:.3f} m²<br>Perimeter: {perimeter:.3f} m</div>"
+                folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='home'), popup=folium.Popup(lot_info_html)).add_to(m)
 
                 st_folium(m, width=1100, height=600)
 
@@ -160,16 +170,9 @@ def main_app():
                 fig, ax = plt.subplots(figsize=(8, 8))
                 ax.plot(list(e) + [e[0]], list(n) + [n[0]], color='blue', marker='o', mfc='red')
                 ax.set_aspect('equal')
-                for i, txt in enumerate(df['STN'] if 'STN' in df.columns else range(1, len(df)+1)):
-                    ax.annotate(txt, (e[i], n[i]), xytext=(5,5), textcoords="offset points")
                 st.pyplot(fig)
 
-            with tab3:
-                st.dataframe(df, use_container_width=True)
-
-            # Butang Export
-            geojson = {"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n)) + [(e[0], n[0])]]}}]}
-            st.download_button("🚀 EXPORT KE QGIS (.geojson)", data=json.dumps(geojson), file_name="survey_farzat.geojson", use_container_width=True)
+            st.download_button("🚀 EXPORT KE QGIS", data=json.dumps({"type": "FeatureCollection", "features": []}), file_name="survey_farzat.geojson", use_container_width=True)
 
 if st.session_state.logged_in: main_app()
 else: login_page()
