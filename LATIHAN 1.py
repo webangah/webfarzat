@@ -5,7 +5,7 @@ import numpy as np
 import json
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="PUO Survey Lot Visualizer", layout="centered")
+st.set_page_config(page_title="PUO Survey Lot Visualizer", layout="wide") # Tukar ke 'wide' supaya lebih cantik
 
 # --- FUNGSI PEMBANTU ---
 def to_dms(deg):
@@ -20,51 +20,79 @@ if 'logged_in' not in st.session_state:
 
 # --- HALAMAN LOG MASUK & LUPA PASSWORD ---
 def login_page():
-    st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
-    st.title("Sistem Lot Ukur PUO")
-    
-    tab1, tab2 = st.tabs(["Log Masuk", "Lupa Kata Laluan"])
-    
-    with tab1:
-        st.info("ID: 1 | Kata Laluan: admin123")
-        user_id = st.text_input("ID Pengguna")
-        password = st.text_input("Kata Laluan", type='password')
+    # Guna lajur untuk letak login di tengah
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
+        st.title("Sistem Lot Ukur PUO")
         
-        if st.button("Log Masuk"):
-            if user_id == "1" and password == "admin123":
-                st.session_state.logged_in = True
-                st.rerun()
-            else:
-                st.error("ID atau Kata Laluan salah!")
+        tab1, tab2 = st.tabs(["Log Masuk", "Lupa Kata Laluan"])
+        
+        with tab1:
+            st.info("ID: 1 | Kata Laluan: admin123")
+            user_id = st.text_input("ID Pengguna")
+            password = st.text_input("Kata Laluan", type='password')
+            
+            if st.button("Log Masuk", use_container_width=True):
+                if user_id == "1" and password == "admin123":
+                    st.session_state.logged_in = True
+                    st.rerun()
+                else:
+                    st.error("ID atau Kata Laluan salah!")
 
-    with tab2:
-        st.subheader("Pemulihan Akaun")
-        soalan = st.text_input("Apakah makanan kesukaan anda?")
-        if st.button("Tunjukkan Kata Laluan"):
-            if soalan.lower() == "ayam":
-                st.success("Kata laluan anda adalah: **admin123**")
-            else:
-                st.error("Jawapan salah!")
+        with tab2:
+            st.subheader("Pemulihan Akaun")
+            soalan = st.text_input("Apakah makanan kesukaan anda?")
+            if st.button("Tunjukkan Kata Laluan", use_container_width=True):
+                if soalan.lower() == "ayam":
+                    st.success("Kata laluan anda adalah: **admin123**")
+                else:
+                    st.error("Jawapan salah!")
 
 # --- HALAMAN UTAMA (APLIKASI) ---
 def main_app():
-    # Sidebar: Info & Log Keluar
-    st.sidebar.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=100)
-    st.sidebar.title("Politeknik Ungku Omar")
-    st.sidebar.write("Jabatan Kejuruteraan Awam")
-    if st.sidebar.button("Log Keluar"):
+    # --- SIDEBAR ---
+    st.sidebar.markdown("<br><br>", unsafe_allow_html=True) # Jarak sedikit dari atas
+    if st.sidebar.button("🔑 Tukar Kata Laluan", use_container_width=True):
+        st.sidebar.info("Fungsi tukar kata laluan belum diaktifkan.")
+    
+    if st.sidebar.button("🚪 Log Keluar", use_container_width=True):
         st.session_state.logged_in = False
         st.rerun()
 
-    st.title("Visualisasi Poligon Data Ukur")
-    st.write("Sila muat naik fail CSV untuk menjana pelan dan fail GeoJSON.")
+    # --- HEADER UTAMA ---
+    col_logo, col_title = st.columns([1, 4])
+    
+    with col_logo:
+        st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", use_column_width=True)
+        
+    with col_title:
+        # Kod HTML untuk hasilkan garisan biru di tepi tajuk
+        st.markdown("""
+        <div style='border-left: 5px solid #007bff; padding-left: 20px; margin-top: 10px;'>
+            <h1 style='margin-bottom: 0px; font-size: 40px;'>SISTEM SURVEY LOT</h1>
+            <p style='color: #6c757d; font-size: 16px; margin-top: 5px;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    uploaded_file = st.file_uploader("Pilih fail CSV anda", type="csv")
+    st.markdown("---") # Garisan pemisah
 
+    # --- BAHAGIAN INPUT (EPSG & MUAT NAIK CSV) ---
+    col_epsg, col_upload = st.columns(2)
+    
+    with col_epsg:
+        kod_epsg = st.text_input("🟢 Kod EPSG:", value="4390")
+        
+    with col_upload:
+        uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
+
+    # --- LOGIK PEMPROSESAN DATA ---
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
+        
+        st.markdown("---")
         st.write("### Pratinjau Data:")
-        st.dataframe(df)
+        st.dataframe(df, use_container_width=True)
 
         if 'E' in df.columns and 'N' in df.columns:
             # 1. Pengiraan LUAS
@@ -95,12 +123,15 @@ def main_app():
                 ax.text(mid_x, mid_y, f"{to_dms(brg)}\n{dist:.3f}m", fontsize=8, color='red', ha='center')
 
             ax.set_aspect('equal')
-            st.pyplot(fig)
             
-            # Metrik Luas
-            col1, col2 = st.columns(2)
-            col1.metric("Luas (m²)", f"{area:.3f}")
-            col2.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
+            # Papar hasil
+            col_plot, col_metric = st.columns([2, 1])
+            with col_plot:
+                st.pyplot(fig)
+            with col_metric:
+                st.metric("Luas (m²)", f"{area:.3f}")
+                st.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
+                st.info(f"Kod EPSG digunakan: **{kod_epsg}**")
 
             # --- KEMUDAHAN KE QGIS ---
             st.markdown("---")
@@ -111,7 +142,7 @@ def main_app():
             # Feature Poligon
             features.append({
                 "type": "Feature",
-                "properties": {"Jenis": "Lot Tanah", "Luas": round(area, 2)},
+                "properties": {"Jenis": "Lot Tanah", "Luas": round(area, 2), "EPSG": kod_epsg},
                 "geometry": {"type": "Polygon", "coordinates": [poly_coords]}
             })
             # Feature Point (Batu Sempadan)
@@ -127,10 +158,11 @@ def main_app():
                 label="Download GeoJSON untuk QGIS",
                 data=geojson_data,
                 file_name="puo_lot_qgis.geojson",
-                mime="application/json"
+                mime="application/json",
+                use_container_width=True
             )
         else:
-            st.error("Kolum 'E' dan 'N' tidak dijumpai.")
+            st.error("Kolum 'E' dan 'N' tidak dijumpai dalam fail CSV anda.")
 
 # --- RUN LOGIC ---
 if st.session_state.logged_in:
