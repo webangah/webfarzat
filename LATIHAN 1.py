@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 import folium
+from folium.plugins import MiniMap
 from streamlit_folium import st_folium
 from pyproj import Transformer
 
@@ -19,7 +20,6 @@ def to_dms(deg):
 
 def transform_coords(df, epsg_code):
     try:
-        # EPSG:4390 (RSO Borneo) atau kod lain ke WGS84
         transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
         lon, lat = transformer.transform(df['E'].values, df['N'].values)
         return lat, lon
@@ -59,11 +59,14 @@ def main_app():
         """, unsafe_allow_html=True)
 
         st.subheader("⚙️ Kawalan Paparan")
-        saiz_marker = st.slider("Saiz Marker Stesen", 5, 30, 12)
-        saiz_teks = st.slider("Saiz Bearing/Jarak", 5, 20, 10)
+        saiz_marker = st.slider("Saiz Marker Stesen", 5, 50, 38)
+        saiz_teks = st.slider("Saiz Bearing/Jarak", 5, 30, 23)
+        tahap_zoom = st.slider("Tahap Zoom", 10, 24, 20)
         warna_poli = st.color_picker("Warna Isi Poligon", "#FFFF00")
         
         st.markdown("---")
+        st.subheader("💾 Eksport Data")
+        
         if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
@@ -77,7 +80,7 @@ def main_app():
 
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
-        kod_epsg = st.text_input("🟢 Kod EPSG (Contoh: 4390):", value="4390")
+        kod_epsg = st.text_input("🟢 Kod EPSG (RSO: 4390):", value="4390")
     with col_upload:
         uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
 
@@ -86,73 +89,57 @@ def main_app():
         
         if 'E' in df.columns and 'N' in df.columns:
             e, n = df['E'].values, df['N'].values
-            # Pengiraan Luas (Traverse)
-            area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
             
-            tab_map, tab_plot = st.tabs(["🌍 Peta Interaktif (Ultra Zoom)", "📊 Lukisan Teknikal"])
+            # Pengiraan Luas & Perimeter
+            area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
+            distances = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
+            perimeter = sum(distances)
+            
+            tab_map, tab_plot = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal"])
 
             with tab_map:
                 lats, lons = transform_coords(df, kod_epsg)
                 
                 if lats is not None:
-                    # Inisialisasi peta dengan max_zoom tinggi (tahap 22)
                     m = folium.Map(
                         location=[np.mean(lats), np.mean(lons)], 
-                        zoom_start=19, 
+                        zoom_start=tahap_zoom, 
                         tiles=None,
-                        max_zoom=22 
+                        max_zoom=24 
                     )
                     
-                    # URL Google Tiles
+                    # Google Layers
                     google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-                    google_streets = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
                     google_hybrid = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
-
-                    # Tambah Layer dengan sokongan zum tinggi
-                    folium.TileLayer(
-                        tiles=google_sat, 
-                        attr='Google Satellite', 
-                        name='Google Satellite', 
-                        max_zoom=22, 
-                        max_native_zoom=20, 
-                        overlay=False
-                    ).add_to(m)
-
-                    folium.TileLayer(
-                        tiles=google_streets, 
-                        attr='Google Streets', 
-                        name='Google Street Map', 
-                        max_zoom=22, 
-                        max_native_zoom=20, 
-                        overlay=False
-                    ).add_to(m)
-
-                    folium.TileLayer(
-                        tiles=google_hybrid, 
-                        attr='Google Hybrid', 
-                        name='Google Hybrid (Satelit + Jalan)', 
-                        max_zoom=22, 
-                        max_native_zoom=20, 
-                        overlay=False
-                    ).add_to(m)
                     
-                    # Lukis Poligon
+                    folium.TileLayer(tiles=google_sat, attr='Google', name='Google Satellite', max_zoom=24, overlay=False).add_to(m)
+                    folium.TileLayer(tiles=google_hybrid, attr='Google', name='Google Hybrid', max_zoom=24, overlay=False).add_to(m)
+                    
+                    # Poligon dengan Popup Info (Nama Surveyor: MUHAMMAD FARZAT)
                     points = list(zip(lats, lons))
-                    points_closed = points + [points[0]]
+                    popup_html = f"""
+                    <div style="font-family: Arial; width: 220px; font-size: 12pt;">
+                        <h4 style="color: #007bff; margin-bottom: 5px; border-bottom: 1px solid #ccc;">📍 Info Lot</h4>
+                        <b>Surveyor:</b> MUHAMMAD FARZAT<br>
+                        <b>Luas:</b> {area:.3f} m²<br>
+                        <b>Perimeter:</b> {perimeter:.3f} m
+                    </div>
+                    """
                     
                     folium.Polygon(
-                        locations=points_closed, 
+                        locations=points + [points[0]], 
                         color="yellow", 
                         weight=3, 
                         fill=True, 
                         fill_color=warna_poli, 
-                        fill_opacity=0.4
+                        fill_opacity=0.4,
+                        popup=folium.Popup(popup_html, max_width=300)
                     ).add_to(m)
                     
                     # Label Bering & Jarak
                     for i in range(len(df)):
                         p1, p2 = [lats[i], lons[i]], [lats[(i+1)%len(df)], lons[(i+1)%len(df)]]
-                        dist = np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2)
+                        dist = distances[i]
                         brg = np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
                         
                         folium.Marker(
@@ -160,7 +147,7 @@ def main_app():
                             icon=folium.DivIcon(
                                 html=f"""<div style="font-family: Arial; color: #00FF00; font-weight: bold; font-size: {saiz_teks}pt; 
                                 text-shadow: 2px 2px #000; text-align: center; transform: translate(-50%, -50%);">
-                                {to_dms(brg)}<br>{dist:.2f}m</div>"""
+                                {to_dms(brg)}<br>{dist:.3f}m</div>"""
                             )
                         ).add_to(m)
 
@@ -169,7 +156,7 @@ def main_app():
                         stn_id = str(row["STN"]) if "STN" in df.columns else str(i+1)
                         folium.CircleMarker(
                             location=[lats[i], lons[i]],
-                            radius=saiz_marker, color="red", fill=True, fill_color="red", fill_opacity=1
+                            radius=saiz_marker/2, color="red", fill=True, fill_color="red", fill_opacity=1
                         ).add_to(m)
                         
                         folium.Marker(
@@ -177,12 +164,13 @@ def main_app():
                             icon=folium.DivIcon(
                                 icon_anchor=(0,0),
                                 html=f"""<div style="font-family: Arial; color: white; font-weight: bold; font-size: 10pt; 
-                                display: flex; align-items: center; justify-content: center; width: {saiz_marker*2}px; 
-                                height: {saiz_marker*2}px; margin-left: -{saiz_marker}px; margin-top: -{saiz_marker}px;">
+                                display: flex; align-items: center; justify-content: center; width: {saiz_marker}px; 
+                                height: {saiz_marker}px; margin-left: -{saiz_marker/2}px; margin-top: -{saiz_marker/2}px;">
                                 {stn_id}</div>"""
                             )
                         ).add_to(m)
 
+                    MiniMap(toggle_display=True, position='bottomright').add_to(m)
                     folium.LayerControl(position='topright').add_to(m)
                     m.fit_bounds(points)
                     st_folium(m, width=1100, height=600, returned_objects=[])
@@ -198,15 +186,19 @@ def main_app():
                 ax.grid(True, linestyle='--', alpha=0.6)
                 st.pyplot(fig)
 
+            # Bagian Sidebar Download
+            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
+            with st.sidebar:
+                 st.download_button("🚀 Export to QGIS (.geojson)", data=geojson_data, file_name="survey_farzat.geojson", use_container_width=True)
+
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
             c1.metric("Luas (m²)", f"{area:.3f}")
-            c2.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
+            c2.metric("Perimeter (m)", f"{perimeter:.3f}")
+            c3.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
             
-            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
-            c3.download_button("📥 Download GeoJSON", data=geojson_data, file_name="survey_export.geojson", use_container_width=True)
         else:
-            st.error("Format CSV salah. Perlu kolum E dan N.")
+            st.error("Sila pastikan fail CSV mempunyai kolum 'E' dan 'N'.")
 
 # JALANKAN APP
 if st.session_state.logged_in:
