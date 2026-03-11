@@ -32,6 +32,11 @@ if wallpaper_data:
             background: white; padding: 30px; border-radius: 15px; 
             box-shadow: 0 4px 15px rgba(0,0,0,0.2); color: #333;
         }}
+        .main-header {{
+            background: white; padding: 20px; border-radius: 10px; 
+            border-left: 10px solid #007bff; box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }}
         </style>
         """, unsafe_allow_html=True)
 
@@ -53,9 +58,9 @@ def transform_coords(df, epsg_code):
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'current_user' not in st.session_state: st.session_state.current_user = ""
 if 'attempts' not in st.session_state: st.session_state.attempts = 0
-if 'recovery_mode' not in st.session_state: st.session_state.recovery_mode = False
+if 'recovery_active' not in st.session_state: st.session_state.recovery_active = False
 
-# Database Pengguna (Simpan dalam Session supaya boleh diubah)
+# Database Pengguna Awal
 if 'users_db' not in st.session_state:
     st.session_state.users_db = {
         "farzat": "442006",
@@ -75,73 +80,131 @@ def login_page():
         
         st.markdown('<div class="login-box">', unsafe_allow_html=True)
         
-        # JIKA MOD PEMULIHAN AKTIF
-        if st.session_state.recovery_mode:
-            st.subheader("🛠️ Pemulihan Akaun")
-            safe_word = st.text_input("Masukkan Kata Selamat", type="password")
+        # --- PAPARAN PEMULIHAN AKAUN ---
+        if st.session_state.recovery_active:
+            st.markdown("<h3 style='text-align: center; color: #d9534f;'>🛠️ PEMULIHAN AKAUN</h3>", unsafe_allow_html=True)
+            safe_word = st.text_input("Masukkan Kata Selamat", type="password", placeholder="Petunjuk: 'pro...'")
             
             if safe_word == SECRET_KEY:
-                st.success("Kata selamat betul!")
-                new_user = st.text_input("ID Pengguna Baru")
+                st.success("✅ Kata selamat disahkan!")
+                new_id = st.text_input("ID Pengguna Baru")
                 new_pass = st.text_input("Kata Laluan Baru", type="password")
                 
-                if st.button("SAHKAN PERUBAHAN"):
-                    if new_user and new_pass:
-                        st.session_state.users_db[new_user] = new_pass
-                        st.session_state.recovery_mode = False
+                if st.button("KEMASKINI DATA AKAUN", use_container_width=True):
+                    if new_id and new_pass:
+                        st.session_state.users_db[new_id] = new_pass
+                        st.session_state.recovery_active = False
                         st.session_state.attempts = 0
-                        st.success("Berjaya! Sila Log Masuk dengan ID baru.")
+                        st.success(f"Berjaya! Akaun {new_id} sedia digunakan.")
                         st.rerun()
                     else:
-                        st.error("Sila isi semua ruangan!")
+                        st.error("Sila isi semua maklumat!")
             elif safe_word != "":
-                st.error("Kata Selamat Salah!")
-                
-            if st.button("Batal"):
-                st.session_state.recovery_mode = False
+                st.error("❌ Kata selamat salah!")
+
+            if st.button("Kembali ke Log Masuk", use_container_width=True):
+                st.session_state.recovery_active = False
+                st.session_state.attempts = 0
                 st.rerun()
 
-        # JIKA LOG MASUK BIASA
+        # --- PAPARAN LOG MASUK BIASA ---
         else:
             st.markdown("<h2 style='text-align: center;'>LOG MASUK SISTEM</h2>", unsafe_allow_html=True)
-            user_in = st.text_input("ID Pengguna")
-            pass_in = st.text_input("Kata Laluan", type="password")
+            u_input = st.text_input("ID Pengguna")
+            p_input = st.text_input("Kata Laluan", type="password")
             
-            if st.button("MASUK"):
-                if user_in in st.session_state.users_db and st.session_state.users_db[user_in] == pass_in:
+            if st.button("MASUK", use_container_width=True):
+                if u_input in st.session_state.users_db and st.session_state.users_db[u_input] == p_input:
                     st.session_state.logged_in = True
-                    st.session_state.current_user = user_in.upper()
+                    st.session_state.current_user = u_input.upper()
+                    st.session_state.attempts = 0
                     st.rerun()
                 else:
                     st.session_state.attempts += 1
-                    if st.session_state.attempts >= 3:
-                        st.error("⚠️ ID atau Kata Laluan Salah 3 Kali!")
-                        st.info("Terlupa kata laluan atau ID pengguna?")
-                        if st.button("KLIK UNTUK RESET"):
-                            st.session_state.recovery_mode = True
-                            st.rerun()
-                    else:
-                        st.error(f"Salah! Cubaan: {st.session_state.attempts}/3")
+                    if st.session_state.attempts < 3:
+                        st.error(f"ID atau Kata Laluan Salah! (Cubaan: {st.session_state.attempts}/3)")
+            
+            # Jika salah 3 kali atau lebih
+            if st.session_state.attempts >= 3:
+                st.error("❌ Akses Disekat: Percubaan melebihi had.")
+                st.warning("⚠️ Terlupa kata laluan atau ID pengguna?")
+                if st.button("KLIK UNTUK RESET AKAUN", use_container_width=True):
+                    st.session_state.recovery_active = True
+                    st.rerun()
         
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- HALAMAN UTAMA ---
+# --- HALAMAN UTAMA (Hanya muncul jika logged_in = True) ---
 def main_app():
     with st.sidebar:
-        st.markdown(f"### 👤 {st.session_state.current_user}")
-        if st.button("🚪 Log Keluar"):
+        st.markdown(f"""
+            <div style='text-align: center; background: linear-gradient(135deg, #00b4ff, #007bff); padding: 15px; border-radius: 10px; color: white;'>
+                <h3>Hai, {st.session_state.current_user}!</h3>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.subheader("⚙️ Kawalan Peta")
+        saiz_marker = st.slider("Saiz Marker", 5, 50, 38)
+        saiz_teks = st.slider("Saiz Teks", 10, 30, 23)
+        warna_poli = st.color_picker("Warna Poligon", "#FFFF00")
+        
+        if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
-            st.session_state.attempts = 0
+            st.session_state.current_user = ""
             st.rerun()
 
-    st.markdown(f'<div class="main-header"><h1>SISTEM SURVEY LOT</h1><p>Selamat Datang, {st.session_state.current_user}</p></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="main-header"><h1>SISTEM SURVEY LOT + GOOGLE MAPS</h1><p>Log Masuk Sebagai: {st.session_state.current_user}</p></div>', unsafe_allow_html=True)
 
-    # (Bahagian muat naik CSV dan peta kekal sama seperti sebelum ini)
-    file = st.file_uploader("📂 Muat naik fail CSV", type="csv")
+    col1, col2 = st.columns(2)
+    with col1: epsg = st.text_input("🟢 Kod EPSG:", value="4390")
+    with col2: file = st.file_uploader("📂 Muat naik fail CSV (STN, E, N)", type="csv")
+
     if file:
-        st.success("Fail berjaya dimuat naik!")
-        # ... (kod peta anda di sini)
+        df = pd.read_csv(file)
+        if 'E' in df.columns and 'N' in df.columns:
+            e, n = df['E'].values, df['N'].values
+            lats, lons = transform_coords(df, epsg)
+            
+            area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
+            dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
 
+            tab1, tab2 = st.tabs(["🌍 Peta Interaktif", "📋 Jadual Data"])
+            
+            with tab1:
+                m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20)
+                folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Satellite').add_to(m)
+                
+                # Feature Groups (On/Off Buttons)
+                fg_stesen = folium.FeatureGroup(name="Marker Stesen").add_to(m)
+                fg_label = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
+                fg_sempadan = folium.FeatureGroup(name="Sempadan Lot").add_to(m)
+                fg_luas = folium.FeatureGroup(name="Info Luas & Surveyor").add_to(m)
+
+                # Lukis Sempadan
+                points = list(zip(lats, lons))
+                folium.Polygon(locations=points + [points[0]], color=warna_poli, weight=3, fill=True, fill_opacity=0.3).add_to(fg_sempadan)
+
+                for i in range(len(df)):
+                    stn_name = str(df['STN'].iloc[i]) if 'STN' in df.columns else str(i+1)
+                    # Marker
+                    folium.CircleMarker([lats[i], lons[i]], radius=saiz_marker/4, color="red", fill=True).add_to(fg_stesen)
+                    # Label
+                    next_i = (i + 1) % len(df)
+                    brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
+                    label_html = f'<div style="color:#FFFF00; font-size:{saiz_teks}pt; text-shadow:2px 2px #000; font-weight:bold;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
+                    folium.Marker([(lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2], icon=folium.DivIcon(html=label_html)).add_to(fg_label)
+
+                # Center Info
+                folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='home'), 
+                              popup=f"Luas: {area:.3f} m²\nSurveyor: {st.session_state.current_user}").add_to(fg_luas)
+
+                folium.LayerControl(position='topright', collapsed=False).add_to(m)
+                st_folium(m, width=1100, height=600)
+            
+            with tab2:
+                st.dataframe(df, use_container_width=True)
+
+# --- LOGIK JALANKAN APLIKASI ---
 if st.session_state.logged_in:
     main_app()
 else:
