@@ -12,7 +12,7 @@ import base64
 # --- KONFIGURASI HALAMAN ---
 st.set_page_config(page_title="SISTEM SURVEY LOT", layout="wide")
 
-# Fungsi untuk menukar imej ke format Base64
+# Fungsi untuk memproses imej ke Base64 (untuk paparan logo/profil)
 def get_base64_image(image_path):
     try:
         with open(image_path, "rb") as img_file:
@@ -20,7 +20,7 @@ def get_base64_image(image_path):
     except:
         return None
 
-# FUNGSI PEMBANTU
+# Fungsi Matematik Survey
 def to_dms(deg):
     d = int(deg)
     m = int((deg - d) * 60)
@@ -32,139 +32,193 @@ def transform_coords(df, epsg_code):
         transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
         lon, lat = transformer.transform(df['E'].values, df['N'].values)
         return lat, lon
-    except Exception as e:
+    except:
         return None, None
 
-# PENGURUSAN SESSION STATE
+# --- PENGURUSAN SESSION STATE (KESELAMATAN) ---
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
+if 'login_attempts' not in st.session_state:
+    st.session_state.login_attempts = 0
+if 'current_password' not in st.session_state:
+    st.session_state.current_password = "442006"
+if 'forgot_pw_mode' not in st.session_state:
+    st.session_state.forgot_pw_mode = False
 
-# HALAMAN LOG MASUK
+# --- HALAMAN LOG MASUK ---
 def login_page():
-    col1, col2, col3 = st.columns([1,2,1])
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        logo_puo = get_base64_image("PUO_Logo.png")
-        if logo_puo:
-            st.markdown(f'<center><img src="data:image/png;base64,{logo_puo}" width="150"></center>', unsafe_allow_html=True)
-        st.title("Log Masuk Sistem")
-        user_id = st.text_input("ID Pengguna")
-        password = st.text_input("Kata Laluan", type='password')
-        if st.button("Log Masuk", use_container_width=True):
-            if user_id == "1" and password == "admin123":
+        # Logo PUO
+        logo_data = get_base64_image("PUO_Logo.png")
+        if logo_data:
+            st.markdown(f'<center><img src="data:image/png;base64,{logo_data}" width="150"></center>', unsafe_allow_html=True)
+        
+        st.markdown("<h2 style='text-align: center;'>SISTEM SURVEY LOT</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Sila masukkan kredential anda</p>", unsafe_allow_html=True)
+
+        # Form Input
+        user_id = st.text_input("ID Pengguna", placeholder="Masukkan ID")
+        password = st.text_input("Kata Laluan", type='password', placeholder="Masukkan Kata Laluan")
+        
+        btn_login = st.button("LOG MASUK", use_container_width=True)
+
+        if btn_login:
+            if user_id == "farzat" and password == st.session_state.current_password:
                 st.session_state.logged_in = True
+                st.session_state.login_attempts = 0
+                st.success("Log masuk berjaya!")
                 st.rerun()
             else:
-                st.error("ID atau Kata Laluan salah!")
+                st.session_state.login_attempts += 1
+                st.error(f"ID atau Kata Laluan Salah! (Percubaan: {st.session_state.login_attempts}/3)")
 
-# HALAMAN UTAMA (APLIKASI)
+        # Logik Lupa Kata Laluan (Selepas 3 kali gagal)
+        if st.session_state.login_attempts >= 3:
+            st.markdown("<br>", unsafe_allow_html=True)
+            if st.button("Lupa Kata Laluan?", type="secondary", use_container_width=True):
+                st.session_state.forgot_pw_mode = True
+
+        if st.session_state.forgot_pw_mode:
+            st.markdown("---")
+            st.info("Sila jawab soalan keselamatan untuk menukar kata laluan.")
+            jawapan = st.text_input("Soalan: Apa makanan kegemaran anda?")
+            
+            if jawapan.lower() == "ayam goreng":
+                new_pw = st.text_input("Kata Laluan Baru", type="password")
+                confirm_new_pw = st.text_input("Sahkan Kata Laluan Baru", type="password")
+                
+                if st.button("Tukar Kata Laluan"):
+                    if new_pw == confirm_new_pw and new_pw != "":
+                        st.session_state.current_password = new_pw
+                        st.session_state.login_attempts = 0
+                        st.session_state.forgot_pw_mode = False
+                        st.success("Berjaya! Sila log masuk dengan kata laluan baru.")
+                    else:
+                        st.error("Kata laluan tidak sepadan.")
+            elif jawapan != "":
+                st.error("Jawapan salah! Cuba lagi.")
+
+# --- HALAMAN UTAMA APLIKASI ---
 def main_app():
+    # Sidebar
     with st.sidebar:
-        # PROFIL PENGGUNA (FARZAT)
+        # Foto Profil User
         user_img = get_base64_image("WhatsApp Image 2026-03-12 at 1.42.22 AM.jpeg")
         if user_img:
             st.markdown(f"""
-            <div style='background-color: #0099ff; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;'>
-                <img src='data:image/jpeg;base64,{user_img}' width='100' style='border-radius: 50%; border: 3px solid white; margin-bottom: 10px; object-fit: cover; height: 100px;'>
-                <h2 style='margin: 0;'>Hai, FARZAT!</h2>
-                <p style='font-size: 14px; opacity: 0.8;'>MUHAMMAD FARZAT</p>
-            </div>
+                <div style='text-align: center; background: #007bff; padding: 20px; border-radius: 15px; color: white;'>
+                    <img src='data:image/jpeg;base64,{user_img}' width='100' style='border-radius: 50%; border: 3px solid white;'>
+                    <h3>FARZAT</h3>
+                    <p>ID: farzat</p>
+                </div>
             """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div style='background-color: #0099ff; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;'>
-                <h2 style='margin: 0;'>Hai, FARZAT!</h2>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.subheader("⚙️ Kawalan Paparan")
-        saiz_marker = st.slider("Saiz Marker Stesen", 5, 50, 38)
-        saiz_teks = st.slider("Saiz Bearing/Jarak", 5, 30, 23)
-        tahap_zoom = st.slider("Tahap Zoom", 10, 24, 24)
+        
+        st.markdown("---")
+        st.subheader("⚙️ Tetapan Paparan")
+        saiz_marker = st.slider("Saiz Stesen", 5, 50, 30)
+        saiz_teks = st.slider("Saiz Teks Data", 10, 30, 20)
         warna_poli = st.color_picker("Warna Poligon", "#FFFF00")
         
         st.markdown("---")
-        st.subheader("💾 Eksport Data")
-        if st.button("🚪 Log Keluar", use_container_width=True):
+        if st.button("🚪 LOG KELUAR", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- HEADER (SISTEM SURVEY LOT) ---
-    encoded_logo = get_base64_image("PUO_Logo.png")
-    logo_html = f"<img src='data:image/png;base64,{encoded_logo}' width='110'>" if encoded_logo else ""
+    # Layout Atas
+    st.title("🌍 Dashboard Visualisasi Lot")
+    col_epsg, col_file = st.columns([1, 2])
     
-    st.markdown(f"""
-        <div style='display: flex; align-items: center; gap: 25px; margin-bottom: 25px;'>
-            {logo_html}
-            <div style='border-left: 4px solid #007bff; padding-left: 20px;'>
-                <h1 style='margin: 0; font-size: 45px; color: #212529; font-weight: 800; font-family: sans-serif;'>SISTEM SURVEY LOT</h1>
-                <p style='color: #6c757d; margin: 0; font-size: 16px;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
-            </div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    # Bahagian Input
-    col_epsg, col_upload = st.columns(2)
     with col_epsg:
-        kod_epsg = st.text_input("🟢 Kod EPSG:", value="4390")
-    with col_upload:
-        uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
+        kod_epsg = st.text_input("Kod EPSG (cth: 4326/4390):", value="4390")
+    with col_file:
+        uploaded_file = st.file_uploader("Muat naik data ukur (.csv)", type="csv")
 
-    if uploaded_file is not None:
+    if uploaded_file:
         df = pd.read_csv(uploaded_file)
         if 'E' in df.columns and 'N' in df.columns:
             e, n = df['E'].values, df['N'].values
+            
+            # Pengiraan Luas & Perimeter
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
-            distances = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
-            perimeter = sum(distances)
+            dist = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
+            
+            # Koordinat GPS untuk Folium
             lats, lons = transform_coords(df, kod_epsg)
 
-            tab1, tab2, tab3 = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal", "📋 Senarai Koordinat"])
+            tab1, tab2 = st.tabs(["🗺️ Peta Interaktif", "📊 Data Teknikal"])
 
             with tab1:
                 if lats is not None:
-                    m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=tahap_zoom, tiles=None)
-                    folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Hybrid (Satelit)', max_zoom=24).add_to(m)
-                    folium.TileLayer('openstreetmap', name='openstreetmap').add_to(m)
+                    m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20)
+                    # Google Satellite Layer
+                    folium.TileLayer(
+                        tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+                        attr='Google',
+                        name='Satelit',
+                        overlay=False,
+                        control=True
+                    ).add_to(m)
                     
                     points = list(zip(lats, lons))
-                    popup_html = f"<div style='font-family: Arial; width: 200px;'><b>📍 Info Lot</b><br><b>Surveyor:</b> MUHAMMAD FARZAT<br><b>Luas:</b> {area:.3f} m²<br><b>Perimeter:</b> {perimeter:.3f} m</div>"
-                    
-                    folium.Polygon(locations=points + [points[0]], color="yellow", weight=3, fill=True, fill_color=warna_poli, fill_opacity=0.4, popup=folium.Popup(popup_html, max_width=300)).add_to(m)
-                    
-                    for i in range(len(df)):
-                        p1, p2 = [lats[i], lons[i]], [lats[(i+1)%len(df)], lons[(i+1)%len(df)]]
-                        dist, brg = distances[i], np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
-                        folium.Marker([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2], icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: #FFFF00; font-weight: bold; font-size: {saiz_teks}pt; text-shadow: 1px 1px #000; white-space: nowrap;'>{to_dms(brg)}<br>{dist:.3f}m</div>")).add_to(m)
+                    folium.Polygon(
+                        locations=points + [points[0]],
+                        color=warna_poli,
+                        weight=4,
+                        fill=True,
+                        fill_opacity=0.3
+                    ).add_to(m)
 
                     for i, row in df.iterrows():
-                        stn_id = str(row["STN"]) if "STN" in df.columns else str(i+1)
-                        folium.CircleMarker(location=[lats[i], lons[i]], radius=saiz_marker/2, color="red", fill=True, fill_color="red", fill_opacity=1).add_to(m)
-                        folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(icon_anchor=(0,0), html=f"<div style='color: white; font-weight: bold; font-size: 10pt; text-align: center; width: 20px; line-height: 20px;'>{stn_id}</div>")).add_to(m)
-
-                    folium.LayerControl().add_to(m)
-                    st_folium(m, width=1100, height=600)
+                        folium.CircleMarker(
+                            [lats[i], lons[i]], 
+                            radius=saiz_marker/5, 
+                            color="red", 
+                            fill=True
+                        ).add_to(m)
+                    
+                    st_folium(m, width=1000, height=500)
 
             with tab2:
-                fig, ax = plt.subplots()
-                ax.plot(list(e)+[e[0]], list(n)+[n[0]], 'ro-')
-                ax.set_aspect('equal')
-                st.pyplot(fig)
+                st.write(f"**Luas:** {area:.3f} m²")
+                st.write(f"**Perimeter:** {sum(dist):.3f} m")
+                st.dataframe(df)
 
-            with tab3:
-                st.dataframe(df, use_container_width=True)
-
-            with st.sidebar:
-                 geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
-                 st.download_button("🚀 Export to QGIS (.geojson)", data=geojson_data, file_name="survey_lot_farzat.geojson", use_container_width=True)
-
+            # EPORT TO QGIS SECTION
             st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Luas (m²)", f"{area:.3f}")
-            c2.metric("Perimeter (m)", f"{perimeter:.3f}")
-            c3.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
+            st.subheader("📦 Eksport Data ke QGIS")
+            
+            # Bina GeoJSON
+            features = []
+            polygon_coords = [list(zip(e, n))]
+            polygon_coords[0].append((e[0], n[0])) # Tutup poligon
+            
+            feature = {
+                "type": "Feature",
+                "properties": {"Name": "Lot Survey Farzat", "Area": area},
+                "geometry": {"type": "Polygon", "coordinates": polygon_coords}
+            }
+            features.append(feature)
+            
+            geojson_output = {
+                "type": "FeatureCollection",
+                "crs": {"type": "name", "properties": {"name": f"urn:ogc:def:crs:EPSG::{kod_epsg}"}},
+                "features": features
+            }
+            
+            st.download_button(
+                label="📥 MUAT TURUN FAIL GEOJSON (QGIS)",
+                data=json.dumps(geojson_output),
+                file_name="survey_farzat.geojson",
+                mime="application/json",
+                use_container_width=True
+            )
+        else:
+            st.error("Sila pastikan fail CSV mempunyai kolum 'E' dan 'N'.")
 
-# JALANKAN APP
+# --- MAIN LOGIC ---
 if st.session_state.logged_in:
     main_app()
 else:
