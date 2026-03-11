@@ -6,7 +6,6 @@ import folium
 from streamlit_folium import st_folium
 from pyproj import Transformer
 import base64
-import matplotlib.pyplot as plt
 from folium.plugins import Fullscreen
 
 # --- KONFIGURASI HALAMAN ---
@@ -60,18 +59,17 @@ def transform_coords(df, epsg_code):
         return lat, lon
     except: return None, None
 
-# --- PENGURUSAN SESSION & SECURITY ---
+# --- SESSION STATE ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'current_user' not in st.session_state: st.session_state.current_user = ""
 if 'attempts' not in st.session_state: st.session_state.attempts = 0
 if 'recovery_active' not in st.session_state: st.session_state.recovery_active = False
-
 if 'users_db' not in st.session_state:
     st.session_state.users_db = {"farzat": "442006", "sir fauzul": "1234", "123": "1234"}
 
 SECRET_KEY = "progaming"
 
-# --- HALAMAN LOG MASUK ---
+# --- LOGIN PAGE ---
 def login_page():
     col1, col2, col3 = st.columns([1, 1.5, 1])
     with col2:
@@ -98,18 +96,13 @@ def login_page():
                 if u in st.session_state.users_db and st.session_state.users_db[u] == p:
                     st.session_state.logged_in = True
                     st.session_state.current_user = u.upper()
-                    st.session_state.attempts = 0
                     st.rerun()
                 else: st.session_state.attempts += 1
-            
             if st.session_state.attempts >= 3:
-                st.error("Gagal 3 kali!")
-                if st.button("LUPA ID/PASSWORD?"): 
-                    st.session_state.recovery_active = True
-                    st.rerun()
+                if st.button("LUPA ID/PASSWORD?"): st.session_state.recovery_active = True; st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-# --- HALAMAN UTAMA ---
+# --- MAIN APP ---
 def main_app():
     with st.sidebar:
         if prof_img_data:
@@ -119,13 +112,11 @@ def main_app():
                     <h3 style='margin-top: 10px;'>{st.session_state.current_user}</h3>
                 </div>
             """, unsafe_allow_html=True)
-        st.subheader("⚙️ Tetapan")
-        saiz_m = st.slider("Saiz Marker", 5, 50, 30)
-        saiz_t = st.slider("Saiz Teks", 10, 30, 20)
+        st.subheader("⚙️ Tetapan Paparan")
+        saiz_m = st.slider("Saiz Marker Point", 5, 50, 30)
+        saiz_t = st.slider("Saiz Teks Info", 10, 30, 20)
         warna_poly = st.color_picker("Warna Lot", "#FFFF00")
-        if st.button("🚪 Keluar", use_container_width=True): 
-            st.session_state.logged_in = False
-            st.rerun()
+        if st.button("🚪 Keluar", use_container_width=True): st.session_state.logged_in = False; st.rerun()
 
     # --- HEADER ---
     l_html = f'<img src="data:image/png;base64,{logo_puo}" width="80">' if logo_puo else ""
@@ -142,16 +133,13 @@ def main_app():
         area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
         dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
 
-        tab1, tab2 = st.tabs(["🌍 Peta", "📋 Data"])
+        tab1, tab2 = st.tabs(["🌍 Peta Interaktif", "📋 Jadual Data"])
+        
         with tab1:
-            # MAP DENGAN HIGH ZOOM
             m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=19, max_zoom=28)
-            folium.TileLayer(
-                tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
-                attr='Google', name='Google Satellite', max_zoom=28, max_native_zoom=20
-            ).add_to(m)
+            folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Satellite', max_zoom=28, max_native_zoom=20).add_to(m)
             Fullscreen().add_to(m)
-
+            
             fg_stn = folium.FeatureGroup(name="Titik & No STN").add_to(m)
             fg_lbl = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
             fg_poly = folium.FeatureGroup(name="Sempadan").add_to(m)
@@ -161,28 +149,47 @@ def main_app():
 
             for i in range(len(df)):
                 stn_name = str(df['STN'].iloc[i])
-                # Titik Merah
-                folium.CircleMarker([lats[i], lons[i]], radius=saiz_m/4, color="red", fill=True).add_to(fg_stn)
-                # No Stesen
-                folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt;">{stn_name}</div>')).add_to(fg_stn)
-                
-                # Bearing & Jarak
                 next_i = (i + 1) % len(df)
                 brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
+                
+                # --- TAMBAH POPUP PADA SETIAP STATION ---
+                popup_content = f"""
+                <div style="font-family: Arial; width: 150px;">
+                    <b>Stesen: {stn_name}</b><br>
+                    <hr style="margin: 5px 0;">
+                    <b>Ke Stesen:</b> {df['STN'].iloc[next_i]}<br>
+                    <b>Bering:</b> {to_dms(brg)}<br>
+                    <b>Jarak:</b> {dist_list[i]:.3f}m
+                </div>
+                """
+                
+                # Titik Merah (Sekarang ada Popup)
+                folium.CircleMarker(
+                    [lats[i], lons[i]], 
+                    radius=saiz_m/4, 
+                    color="red", 
+                    fill=True, 
+                    popup=folium.Popup(popup_content, max_width=200)
+                ).add_to(fg_stn)
+                
+                # No Stesen
+                folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt; text-shadow:1px 1px black;">{stn_name}</div>')).add_to(fg_stn)
+                
+                # Label Kuning kat garisan
                 mid = [(lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2]
-                label = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
-                folium.Marker(mid, icon=folium.DivIcon(html=label)).add_to(fg_lbl)
+                label_html = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
+                folium.Marker(mid, icon=folium.DivIcon(html=label_html)).add_to(fg_lbl)
 
-            # Info Luas & Surveyor
-            folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue'), 
+            # Info Luas kat tengah
+            folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='info-sign'), 
                           popup=f"Luas: {area:.3f} m²\nSurveyor: {st.session_state.current_user}").add_to(m)
 
-            folium.LayerControl().add_to(m)
+            folium.LayerControl(position='topright', collapsed=False).add_to(m)
             st_folium(m, width=1100, height=600)
 
         # BUTTON EXPORT QGIS
-        geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i])}} for i in range(len(df))]})
-        st.download_button("🚀 EXPORT KE QGIS", data=geojson_data, file_name="output.geojson", use_container_width=True)
+        geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i]), "E": float(e[i]), "N": float(n[i])}} for i in range(len(df))]})
+        st.download_button("🚀 EXPORT KE QGIS (GEOJSON)", data=geojson_data, file_name=f"survey_{st.session_state.current_user}.geojson", use_container_width=True)
 
 if st.session_state.logged_in: main_app()
 else: login_page()
