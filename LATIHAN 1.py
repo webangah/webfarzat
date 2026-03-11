@@ -18,7 +18,7 @@ def get_base64_image(image_path):
     except:
         return None
 
-# --- SUNTIKAN CSS ---
+# --- SUNTIKAN CSS (WALLPAPER & UI) ---
 wallpaper_data = get_base64_image("gambar juruukur.jpg")
 if wallpaper_data:
     st.markdown(f"""
@@ -51,9 +51,16 @@ def transform_coords(df, epsg_code):
         return lat, lon
     except: return None, None
 
-# --- PENGURUSAN SESSION ---
+# --- PENGURUSAN SESSION & MULTI-USER ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'password_db' not in st.session_state: st.session_state.password_db = "442006"
+if 'current_user' not in st.session_state: st.session_state.current_user = ""
+
+# Database Pengguna (ID: Kata Laluan)
+users_db = {
+    "farzat": "442006",
+    "sir fauzul": "1234",
+    "123": "1234"
+}
 
 # --- HALAMAN LOG MASUK ---
 def login_page():
@@ -62,26 +69,37 @@ def login_page():
         st.markdown("<br><br>", unsafe_allow_html=True)
         logo = get_base64_image("PUO_Logo.png")
         if logo: st.markdown(f'<center><img src="data:image/png;base64,{logo}" width="180"></center>', unsafe_allow_html=True)
-        st.markdown("<h2 style='text-align: center;'>LOG MASUK SISTEM</h2>", unsafe_allow_html=True)
-        user_id = st.text_input("ID Pengguna", value="farzat")
-        password = st.text_input("Kata Laluan", type='password')
+        
+        st.markdown("<div style='background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2);'>", unsafe_allow_html=True)
+        st.markdown("<h2 style='text-align: center; color: #333;'>LOG MASUK SISTEM</h2>", unsafe_allow_html=True)
+        
+        input_user = st.text_input("ID Pengguna")
+        input_pass = st.text_input("Kata Laluan", type='password')
+        
         if st.button("MASUK", use_container_width=True):
-            if user_id == "farzat" and password == st.session_state.password_db:
+            # Semak jika ID wujud dan kata laluan sepadan
+            if input_user in users_db and users_db[input_user] == input_pass:
                 st.session_state.logged_in = True
+                st.session_state.current_user = input_user.upper()
                 st.rerun()
-            else: st.error("ID atau Kata Laluan Salah!")
+            else:
+                st.error("ID Pengguna atau Kata Laluan Salah!")
+        st.markdown("</div>", unsafe_allow_html=True)
 
 # --- HALAMAN UTAMA ---
 def main_app():
     with st.sidebar:
+        # Menyesuaikan gambar profil jika ada
         prof_img = get_base64_image("WhatsApp Image 2026-03-12 at 1.42.22 AM.jpeg")
         if prof_img:
             st.markdown(f"""
                 <div style='text-align: center; background: linear-gradient(135deg, #00b4ff, #007bff); padding: 20px; border-radius: 15px; color: white; margin-bottom: 20px;'>
                     <img src='data:image/jpeg;base64,{prof_img}' width='100' style='border-radius: 50%; border: 3px solid white; height: 100px; object-fit: cover;'>
-                    <h3 style='margin:10px 0 0 0;'>Hai, FARZAT!</h3>
+                    <h3 style='margin:10px 0 0 0;'>Hai, {st.session_state.current_user}!</h3>
                 </div>
             """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"### Selamat Datang, {st.session_state.current_user}!")
         
         st.subheader("⚙️ Kawalan Paparan")
         saiz_marker = st.slider("Saiz Marker Stesen", 5, 50, 38)
@@ -90,9 +108,10 @@ def main_app():
         
         if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
+            st.session_state.current_user = ""
             st.rerun()
 
-    st.markdown(f'<div class="main-header"><h1>SISTEM SURVEY LOT + GOOGLE MAPS</h1><p>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="main-header"><h1>SISTEM SURVEY LOT + GOOGLE MAPS</h1><p>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam | Log Masuk Sebagai: {st.session_state.current_user}</p></div>', unsafe_allow_html=True)
 
     col_epsg, col_file = st.columns(2)
     with col_epsg:
@@ -113,23 +132,23 @@ def main_app():
             tab1, tab2, tab3 = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal", "📋 Senarai Koordinat"])
             
             with tab1:
-                # 1. Inisialisasi Peta
-                m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20, control_scale=True)
+                # Inisialisasi Peta
+                m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20)
                 
-                # 2. Base Layers
+                # Base Layers
                 folium.TileLayer(
                     tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
-                    attr='Google', name='Google Satellite', max_zoom=24
+                    attr='Google', name='Google Satellite', max_zoom=24, control=True
                 ).add_to(m)
-                folium.TileLayer('openstreetmap', name='OpenStreetMap').add_to(m)
+                folium.TileLayer('openstreetmap', name='OpenStreetMap', control=True).add_to(m)
 
-                # 3. Create Feature Groups (Buttons)
-                fg_sempadan = folium.FeatureGroup(name="Sempadan Lot").add_to(m)
-                fg_labels = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
+                # Feature Groups (Untuk Butang On/Off)
                 fg_stesen = folium.FeatureGroup(name="Marker Stesen").add_to(m)
+                fg_sempadan = folium.FeatureGroup(name="Sempadan Lot").add_to(m)
+                fg_label = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
                 fg_luas = folium.FeatureGroup(name="Info Luas & Surveyor").add_to(m)
 
-                # Poligon (Sempadan)
+                # Tambah Sempadan
                 points = list(zip(lats, lons))
                 folium.Polygon(
                     locations=points + [points[0]], 
@@ -140,13 +159,11 @@ def main_app():
                 for i in range(len(df)):
                     p_lat, p_lon = lats[i], lons[i]
                     stn_name = str(df['STN'].iloc[i]) if 'STN' in df.columns else str(i+1)
-                    val_e, val_n = df['E'].iloc[i], df['N'].iloc[i]
-
-                    # Marker Stesen
-                    stn_popup_html = f'<div style="min-width:140px;"><b>STN {stn_name}</b><br>E: {val_e:.3f}<br>N: {val_n:.3f}</div>'
+                    
+                    # 1. Marker Stesen
                     folium.CircleMarker(
                         [p_lat, p_lon], radius=saiz_marker/4, color="red", fill=True, fill_opacity=1,
-                        popup=folium.Popup(stn_popup_html, max_width=250)
+                        popup=f"STN: {stn_name}\nE: {df['E'].iloc[i]:.3f}\nN: {df['N'].iloc[i]:.3f}"
                     ).add_to(fg_stesen)
                     
                     folium.Marker(
@@ -154,24 +171,24 @@ def main_app():
                         icon=folium.DivIcon(html=f"<div style='color:white; font-weight:bold; font-size:10pt; transform:translate(-3px,-7px);'>{stn_name}</div>")
                     ).add_to(fg_stesen)
 
-                    # Label Bearing & Jarak
+                    # 2. Label Bearing & Jarak
                     next_i = (i + 1) % len(df)
                     dist = dist_list[i]
                     brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
                     m_lat, m_lon = (lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2
                     
                     label_html = f'<div style="color:#FFFF00; font-size:{saiz_teks}pt; text-shadow:2px 2px #000; font-weight:bold; text-align:center;">{to_dms(brg)}<br>{dist:.3f}m</div>'
-                    folium.Marker([m_lat, m_lon], icon=folium.DivIcon(html=label_html)).add_to(fg_labels)
+                    folium.Marker([m_lat, m_lon], icon=folium.DivIcon(html=label_html)).add_to(fg_label)
 
-                # Info Luas (Center Marker)
-                lot_info_html = f"<div style='width:160px;'><b>📍 Info Lot</b><br>Surveyor: FARZAT<br>Luas: {area:.3f} m²<br>Perimeter: {perimeter:.3f} m</div>"
+                # 3. Label Luas & Surveyor
+                lot_info_html = f"<div style='width:160px;'><b>📍 Info Lot</b><br>Surveyor: {st.session_state.current_user}<br>Luas: {area:.3f} m²<br>Perimeter: {perimeter:.3f} m</div>"
                 folium.Marker(
                     [np.mean(lats), np.mean(lons)], 
                     icon=folium.Icon(color='blue', icon='home'), 
                     popup=folium.Popup(lot_info_html)
                 ).add_to(fg_luas)
 
-                # --- LAYER CONTROL (BUTANG ON/OFF) ---
+                # --- CONTROL PANEL (ON/OFF) ---
                 folium.LayerControl(position='topright', collapsed=False).add_to(m)
 
                 st_folium(m, width=1100, height=600)
@@ -180,13 +197,11 @@ def main_app():
                 fig, ax = plt.subplots(figsize=(8, 8))
                 ax.plot(list(e) + [e[0]], list(n) + [n[0]], color='blue', marker='o', mfc='red')
                 ax.set_aspect('equal')
-                ax.grid(True, linestyle='--', alpha=0.6)
+                ax.grid(True)
                 st.pyplot(fig)
             
             with tab3:
                 st.dataframe(df, use_container_width=True)
-
-            st.download_button("🚀 EXPORT KE QGIS (GEOJSON)", data=json.dumps({"type": "FeatureCollection", "features": []}), file_name="survey_farzat.geojson", use_container_width=True)
 
 if st.session_state.logged_in: main_app()
 else: login_page()
