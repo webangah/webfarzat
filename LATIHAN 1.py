@@ -10,7 +10,7 @@ from pyproj import Transformer
 import base64
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="Sistem Survey Lot", layout="wide")
+st.set_page_config(page_title="SYSTEM SURVEY LOT", layout="wide")
 
 # Fungsi untuk menukar imej ke format Base64
 def get_base64_image(image_path):
@@ -45,13 +45,12 @@ def login_page():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        # Sila pastikan fail logo anda dinamakan 'PUO_Logo.png'
         try:
             st.image("PUO_Logo.png", width=150)
         except:
             st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
             
-        st.title("Sistem Lot Ukur")
+        st.title("Log Masuk Sistem")
         user_id = st.text_input("ID Pengguna")
         password = st.text_input("Kata Laluan", type='password')
         if st.button("Log Masuk", use_container_width=True):
@@ -83,23 +82,22 @@ def main_app():
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- TAJUK UTAMA (HANYA SISTEM SURVEY LOT) ---
+    # --- TAJUK UTAMA (KEMASKINI: SYSTEM SURVEY LOT) ---
     encoded_logo = get_base64_image("PUO_Logo.png")
-    
     logo_html = f"<img src='data:image/png;base64,{encoded_logo}' width='90'>" if encoded_logo else ""
     
     st.markdown(f"""
         <div style='display: flex; align-items: center; gap: 20px; border-left: 5px solid #007bff; padding: 5px 20px;'>
             {logo_html}
             <div>
-                <h1 style='margin: 0; font-size: 35px; letter-spacing: 1px;'>SISTEM SURVEY LOT</h1>
+                <h1 style='margin: 0; font-size: 35px; letter-spacing: 1px; text-transform: uppercase;'>SYSTEM SURVEY LOT</h1>
                 <p style='color: #6c757d; margin: 0; font-size: 14px;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
             </div>
         </div>
         <br>
     """, unsafe_allow_html=True)
 
-    # Bahagian Input
+    # Input Section
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
         kod_epsg = st.text_input("🟢 Kod EPSG (RSO: 4390):", value="4390")
@@ -108,7 +106,6 @@ def main_app():
 
     if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        
         if 'E' in df.columns and 'N' in df.columns:
             e, n = df['E'].values, df['N'].values
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
@@ -122,51 +119,34 @@ def main_app():
                 if lats is not None:
                     m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=tahap_zoom, tiles=None, max_zoom=24)
                     google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-                    google_hybrid = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
-                    folium.TileLayer(tiles=google_sat, attr='Google', name='Google Satellite', max_zoom=24, overlay=False).add_to(m)
-                    folium.TileLayer(tiles=google_hybrid, attr='Google', name='Google Hybrid', max_zoom=24, overlay=False).add_to(m)
+                    folium.TileLayer(tiles=google_sat, attr='Google', name='Satellite', max_zoom=24, overlay=False).add_to(m)
                     
                     points = list(zip(lats, lons))
-                    popup_html = f"""<div style='font-family: Arial; width: 220px;'><b>Surveyor:</b> MUHAMMAD FARZAT<br><b>Luas:</b> {area:.3f} m²<br><b>Perimeter:</b> {perimeter:.3f} m</div>"""
+                    popup_html = f"<div style='font-family: Arial; width: 220px;'><b>Surveyor:</b> MUHAMMAD FARZAT<br><b>Luas:</b> {area:.3f} m²<br><b>Perimeter:</b> {perimeter:.3f} m</div>"
                     folium.Polygon(locations=points + [points[0]], color="yellow", weight=3, fill=True, fill_color=warna_poli, fill_opacity=0.4, popup=folium.Popup(popup_html, max_width=300)).add_to(m)
                     
                     for i in range(len(df)):
                         p1, p2 = [lats[i], lons[i]], [lats[(i+1)%len(df)], lons[(i+1)%len(df)]]
-                        dist = distances[i]
-                        brg = np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
-                        folium.Marker([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2], icon=folium.DivIcon(html=f"""<div style="font-family: Arial; color: #00FF00; font-weight: bold; font-size: {saiz_teks}pt; text-shadow: 2px 2px #000; text-align: center; transform: translate(-50%, -50%);">{to_dms(brg)}<br>{dist:.3f}m</div>""")).add_to(m)
+                        dist, brg = distances[i], np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
+                        folium.Marker([(p1[0]+p2[0])/2, (p1[1]+p2[1])/2], icon=folium.DivIcon(html=f"<div style='font-family: Arial; color: #00FF00; font-weight: bold; font-size: {saiz_teks}pt; text-shadow: 2px 2px #000; text-align: center; transform: translate(-50%, -50%);'>{to_dms(brg)}<br>{dist:.3f}m</div>")).add_to(m)
 
                     for i, row in df.iterrows():
                         stn_id = str(row["STN"]) if "STN" in df.columns else str(i+1)
                         folium.CircleMarker(location=[lats[i], lons[i]], radius=saiz_marker/2, color="red", fill=True, fill_color="red", fill_opacity=1).add_to(m)
-                        folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(icon_anchor=(0,0), html=f"""<div style="font-family: Arial; color: white; font-weight: bold; font-size: 10pt; display: flex; align-items: center; justify-content: center; width: {saiz_marker}px; height: {saiz_marker}px; margin-left: -{saiz_marker/2}px; margin-top: -{saiz_marker/2}px;">{stn_id}</div>""")).add_to(m)
+                        folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(icon_anchor=(0,0), html=f"<div style='font-family: Arial; color: white; font-weight: bold; font-size: 10pt; display: flex; align-items: center; justify-content: center; width: {saiz_marker}px; height: {saiz_marker}px; margin-left: -{saiz_marker/2}px; margin-top: -{saiz_marker/2}px;'>{stn_id}</div>")).add_to(m)
 
                     MiniMap(toggle_display=True, position='bottomright').add_to(m)
-                    folium.LayerControl(position='topright').add_to(m)
+                    folium.LayerControl().add_to(m)
                     m.fit_bounds(points)
                     st_folium(m, width=1100, height=600, returned_objects=[])
 
-            with tab_plot:
-                fig, ax = plt.subplots(figsize=(10, 8))
-                ax.plot(list(e)+[e[0]], list(n)+[n[0]], marker='o', color='black', linewidth=2)
-                ax.fill(list(e)+[e[0]], list(n)+[n[0]], color=warna_poli, alpha=0.3)
-                for i, txt in enumerate(df['STN'] if 'STN' in df.columns else range(1, len(df)+1)):
-                    ax.annotate(txt, (e[i], n[i]), xytext=(0,10), textcoords="offset points", ha='center', fontweight='bold')
-                ax.set_aspect('equal')
-                st.pyplot(fig)
-
             with tab_data:
                 st.subheader("📋 Jadual Koordinat Stesen")
-                coord_df = pd.DataFrame({
-                    'STN': df['STN'] if 'STN' in df.columns else range(1, len(df)+1),
-                    'Northing (N)': n, 'Easting (E)': e,
-                    'Latitude': lats, 'Longitude': lons
-                })
+                coord_df = pd.DataFrame({'STN': df['STN'] if 'STN' in df.columns else range(1, len(df)+1), 'Northing (N)': n, 'Easting (E)': e, 'Latitude': lats, 'Longitude': lons})
                 st.dataframe(coord_df.style.format({'Northing (N)': '{:.3f}', 'Easting (E)': '{:.3f}', 'Latitude': '{:.8f}', 'Longitude': '{:.8f}'}), use_container_width=True)
 
-            # Bagian Sidebar Download GeoJSON
-            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
             with st.sidebar:
+                 geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
                  st.download_button("🚀 Export to QGIS (.geojson)", data=geojson_data, file_name="survey_farzat.geojson", use_container_width=True)
 
             st.markdown("---")
@@ -174,11 +154,10 @@ def main_app():
             c1.metric("Luas (m²)", f"{area:.3f}")
             c2.metric("Perimeter (m)", f"{perimeter:.3f}")
             c3.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
-            
         else:
-            st.error("Format CSV salah. Perlu kolum E dan N.")
+            st.error("Pastikan fail CSV mengandungi kolum E dan N.")
 
-# JALANKAN APP
+# JALANKAN
 if st.session_state.logged_in:
     main_app()
 else:
