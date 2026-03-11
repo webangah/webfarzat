@@ -70,7 +70,7 @@ def main_app():
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- HEADER IKUT GAMBAR RUJUKAN ---
+    # --- HEADER ---
     encoded_logo = get_base64_image("PUO_Logo.png")
     logo_html = f"<img src='data:image/png;base64,{encoded_logo}' width='120'>" if encoded_logo else "LOGO"
     
@@ -128,9 +128,8 @@ def main_app():
             with tab3:
                 st.dataframe(df, use_container_width=True)
 
-            # Sidebar Export
-            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
             with st.sidebar:
+                 geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
                  st.download_button("🚀 Export to QGIS (.geojson)", data=geojson_data, file_name="survey_lot.geojson", use_container_width=True)
 
 if st.session_state.logged_in:
