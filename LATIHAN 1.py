@@ -59,7 +59,7 @@ def transform_coords(df, epsg_code):
         return lat, lon
     except: return None, None
 
-# --- SESSION STATE ---
+# --- SESSION STATE & SECURITY ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'current_user' not in st.session_state: st.session_state.current_user = ""
 if 'attempts' not in st.session_state: st.session_state.attempts = 0
@@ -152,35 +152,41 @@ def main_app():
                 next_i = (i + 1) % len(df)
                 brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
                 
-                # --- TAMBAH POPUP PADA SETIAP STATION ---
+                # POPUP CONTENT
                 popup_content = f"""
-                <div style="font-family: Arial; width: 150px;">
-                    <b>Stesen: {stn_name}</b><br>
-                    <hr style="margin: 5px 0;">
+                <div style="font-family: Arial; width: 160px; font-size: 12px; line-height: 1.5;">
+                    <b style="color:#007bff; font-size:14px;">Stesen: {stn_name}</b><br>
+                    <hr style="margin: 5px 0; border: 0.5px solid #ccc;">
                     <b>Ke Stesen:</b> {df['STN'].iloc[next_i]}<br>
-                    <b>Bering:</b> {to_dms(brg)}<br>
-                    <b>Jarak:</b> {dist_list[i]:.3f}m
+                    <b>Bearing:</b> {to_dms(brg)}<br>
+                    <b>Jarak:</b> {dist_list[i]:.3f}m<br>
+                    <b>E:</b> {df['E'].iloc[i]:.3f}<br>
+                    <b>N:</b> {df['N'].iloc[i]:.3f}
                 </div>
                 """
                 
-                # Titik Merah (Sekarang ada Popup)
+                # TITIK MERAH (Radius klik dibesarkan guna 'radius' dan 'weight')
                 folium.CircleMarker(
                     [lats[i], lons[i]], 
                     radius=saiz_m/4, 
                     color="red", 
                     fill=True, 
-                    popup=folium.Popup(popup_content, max_width=200)
+                    fill_opacity=0.8,
+                    weight=10,  # Lebihkan weight supaya kawasan klik (hitbox) lagi besar
+                    opacity=0,   # Sempadan hitbox ni halimunan
+                    popup=folium.Popup(popup_content, max_width=250),
+                    tooltip=f"Klik untuk info Stesen {stn_name}" # Tunjuk hint bila hover
                 ).add_to(fg_stn)
                 
-                # No Stesen
-                folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt; text-shadow:1px 1px black;">{stn_name}</div>')).add_to(fg_stn)
+                # NOMBOR STESEN (Tulisan Putih)
+                folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt; text-shadow:1px 1px black; width:30px;">{stn_name}</div>')).add_to(fg_stn)
                 
-                # Label Kuning kat garisan
+                # LABEL KUNING KAT GARISAN
                 mid = [(lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2]
-                label_html = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
+                label_html = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center; width:150px;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
                 folium.Marker(mid, icon=folium.DivIcon(html=label_html)).add_to(fg_lbl)
 
-            # Info Luas kat tengah
+            # INFO LUAS (Tengah Lot)
             folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='info-sign'), 
                           popup=f"Luas: {area:.3f} m²\nSurveyor: {st.session_state.current_user}").add_to(m)
 
