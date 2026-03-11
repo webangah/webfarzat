@@ -21,7 +21,6 @@ def get_base64_image(image_path):
 # --- SUNTIKAN CSS ---
 wallpaper_data = get_base64_image("gambar juruukur.jpg")
 logo_puo = get_base64_image("PUO_Logo.png")
-# Pastikan nama fail gambar profil anda betul
 prof_img_data = get_base64_image("WhatsApp Image 2026-03-12 at 1.42.22 AM.jpeg")
 
 if wallpaper_data:
@@ -109,61 +108,77 @@ def main_app():
         if prof_img_data:
             st.markdown(f"""
                 <div style='text-align: center; margin-bottom: 20px;'>
-                    <img src='data:image/jpeg;base64,{prof_img_data}' width='120' style='border-radius: 50%; border: 4px solid #007bff;'>
+                    <img src='data:image/jpeg;base64,{prof_img_data}' width='120' style='border-radius: 50%; border: 4px solid #007bff; height: 120px; object-fit: cover;'>
                     <h3 style='margin-top: 10px;'>{st.session_state.current_user}</h3>
                 </div>
             """, unsafe_allow_html=True)
-        st.subheader("⚙️ Tetapan")
-        saiz_m = st.slider("Marker", 5, 50, 30)
-        saiz_t = st.slider("Teks", 10, 30, 20)
+        st.subheader("⚙️ Tetapan Paparan")
+        saiz_m = st.slider("Saiz Marker Point", 5, 50, 30)
+        saiz_t = st.slider("Saiz Teks Info", 10, 30, 20)
+        warna_poly = st.color_picker("Warna Lot", "#FFFF00")
         if st.button("🚪 Keluar", use_container_width=True): st.session_state.logged_in = False; st.rerun()
 
     # --- HEADER ---
     l_html = f'<img src="data:image/png;base64,{logo_puo}" width="80">' if logo_puo else ""
-    st.markdown(f'<div class="header-container"><div class="header-logo">{l_html}</div><div class="header-text"><h1>SISTEM SURVEY LOT</h1><p>Politeknik Ungku Omar</p></div></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="header-container"><div class="header-logo">{l_html}</div><div class="header-text"><h1>SISTEM SURVEY LOT</h1><p>Jabatan Kejuruteraan Awam | Politeknik Ungku Omar</p></div></div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
-    with col1: epsg = st.text_input("EPSG", "4390")
-    with col2: file = st.file_uploader("Upload CSV", type="csv")
+    with col1: epsg = st.text_input("EPSG (Contoh: 4390)", "4390")
+    with col2: file = st.file_uploader("Upload CSV (Format: STN, E, N)", type="csv")
 
     if file:
         df = pd.read_csv(file)
         lats, lons = transform_coords(df, epsg)
-        
-        # Pengiraan Luas & Data GeoJSON
         e, n = df['E'].values, df['N'].values
-        area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
         
-        tab1, tab2 = st.tabs(["🌍 Peta", "📋 Data"])
+        # Pengiraan Luas & Perimeter
+        area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
+        dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
+
+        tab1, tab2 = st.tabs(["🌍 Peta Interaktif", "📋 Jadual Data"])
+        
         with tab1:
             m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=19)
             folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Satellite').add_to(m)
             
-            # Kumpulan On/Off
-            fg_stn = folium.FeatureGroup(name="Marker Stesen").add_to(m)
+            # Feature Groups (Untuk Button ON/OFF)
+            fg_stn = folium.FeatureGroup(name="Titik Point & No Stesen").add_to(m)
             fg_lbl = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
+            fg_poly = folium.FeatureGroup(name="Sempadan Lot").add_to(m)
+            fg_luas = folium.FeatureGroup(name="Info Luas & Surveyor").add_to(m)
 
+            # Lukis Poligon
             points = list(zip(lats, lons))
-            folium.Polygon(locations=points + [points[0]], color="yellow", fill=True, fill_opacity=0.2).add_to(m)
+            folium.Polygon(locations=points + [points[0]], color=warna_poly, weight=3, fill=True, fill_opacity=0.3).add_to(fg_poly)
 
             for i in range(len(df)):
-                folium.CircleMarker([lats[i], lons[i]], radius=saiz_m/4, color="red", fill=True).add_to(fg_stn)
+                stn_name = str(df['STN'].iloc[i])
+                # 1. Marker Point Merah
+                folium.CircleMarker([lats[i], lons[i]], radius=saiz_m/4, color="red", fill=True, fill_opacity=1).add_to(fg_stn)
+                # 2. Nombor Stesen
+                folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt; transform:translate(-5px,-10px);">{stn_name}</div>')).add_to(fg_stn)
+                
+                # 3. Bearing & Jarak
                 next_i = (i + 1) % len(df)
-                dist = np.sqrt((e[next_i]-e[i])**2 + (n[next_i]-n[i])**2)
                 brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
-                label = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:1px 1px black;">{to_dms(brg)}<br>{dist:.2f}m</div>'
-                folium.Marker([(lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2], icon=folium.DivIcon(html=label)).add_to(fg_lbl)
+                mid_lat, mid_lon = (lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2
+                label_txt = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
+                folium.Marker([mid_lat, mid_lon], icon=folium.DivIcon(html=label_txt)).add_to(fg_lbl)
 
-            folium.LayerControl().add_to(m)
+            # 4. Info Luas (Ikon Biru Tengah)
+            folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='info-sign'), 
+                          popup=f"Luas: {area:.3f} m²\nSurveyor: {st.session_state.current_user}").add_to(fg_luas)
+
+            folium.LayerControl(position='topright', collapsed=False).add_to(m)
             st_folium(m, width=1100, height=600)
 
-        # --- BUTANG EXPORT KE QGIS ---
+        # --- EXPORT SECTION ---
         features = []
         for i in range(len(df)):
-            features.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i])}})
+            features.append({"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i]), "E": float(e[i]), "N": float(n[i])}})
         
         geojson_data = json.dumps({"type": "FeatureCollection", "features": features})
-        st.download_button(label="🚀 EXPORT KE QGIS (GEOJSON)", data=geojson_data, file_name="survey_output.geojson", mime="application/json", use_container_width=True)
+        st.download_button(label="🚀 EXPORT KE QGIS (GEOJSON)", data=geojson_data, file_name=f"survey_{st.session_state.current_user}.geojson", mime="application/json", use_container_width=True)
 
 if st.session_state.logged_in: main_app()
 else: login_page()
