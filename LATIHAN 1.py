@@ -27,13 +27,16 @@ if wallpaper_data:
     st.markdown(f"""
         <style>
         .stApp {{
-            background-image: linear-gradient(rgba(255,255,255,0.6), rgba(255,255,255,0.6)), 
+            background-image: linear-gradient(rgba(255,255,255,0.5), rgba(255,255,255,0.5)), 
                               url("data:image/jpg;base64,{wallpaper_data}");
             background-size: cover; background-position: center; background-attachment: fixed;
         }}
-        .login-box {{
-            background: white; padding: 30px; border-radius: 15px; 
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2); color: #333;
+        /* Menghilangkan kotak putih pada input login */
+        [data-testid="stVerticalBlock"] > div:has(input) {{
+            background-color: rgba(255, 255, 255, 0.2); 
+            padding: 20px; 
+            border-radius: 15px;
+            backdrop-filter: blur(5px);
         }}
         .header-container {{
             display: flex; align-items: center; background: white; padding: 15px;
@@ -71,12 +74,13 @@ SECRET_KEY = "progaming"
 
 # --- LOGIN PAGE ---
 def login_page():
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([1, 1.2, 1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        if logo_puo: st.markdown(f'<center><img src="data:image/png;base64,{logo_puo}" width="180"></center>', unsafe_allow_html=True)
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
+        if logo_puo: 
+            st.markdown(f'<center><img src="data:image/png;base64,{logo_puo}" width="220"></center>', unsafe_allow_html=True)
         
+        # Ruangan ini sekarang telus (Tanpa class login-box yang putih pekat)
         if st.session_state.recovery_active:
             st.subheader("🛠️ PEMULIHAN AKAUN")
             safe_word = st.text_input("Masukkan Kata Selamat", type="password")
@@ -89,7 +93,7 @@ def login_page():
                     st.session_state.recovery_active = False
                     st.rerun()
         else:
-            st.markdown("<h2 style='text-align: center;'>LOG MASUK</h2>", unsafe_allow_html=True)
+            st.markdown("<h2 style='text-align: center; color: #1a1a1a; font-weight: bold;'>LOG MASUK</h2>", unsafe_allow_html=True)
             u = st.text_input("ID")
             p = st.text_input("Password", type="password")
             if st.button("MASUK", use_container_width=True):
@@ -97,10 +101,14 @@ def login_page():
                     st.session_state.logged_in = True
                     st.session_state.current_user = u.upper()
                     st.rerun()
-                else: st.session_state.attempts += 1
+                else: 
+                    st.error("ID atau Password Salah!")
+                    st.session_state.attempts += 1
+            
             if st.session_state.attempts >= 3:
-                if st.button("LUPA ID/PASSWORD?"): st.session_state.recovery_active = True; st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True)
+                if st.button("LUPA ID/PASSWORD?"): 
+                    st.session_state.recovery_active = True
+                    st.rerun()
 
 # --- MAIN APP ---
 def main_app():
@@ -113,18 +121,19 @@ def main_app():
                 </div>
             """, unsafe_allow_html=True)
         st.subheader("⚙️ Tetapan Paparan")
-        saiz_m = st.slider("Saiz Marker Point", 5, 80, 40) # Slider dibesarkan sedikit
+        saiz_m = st.slider("Saiz Marker Point", 5, 80, 40)
         saiz_t = st.slider("Saiz Teks Info", 10, 30, 20)
         warna_poly = st.color_picker("Warna Lot", "#FFFF00")
-        if st.button("🚪 Keluar", use_container_width=True): st.session_state.logged_in = False; st.rerun()
+        if st.button("🚪 Keluar", use_container_width=True): 
+            st.session_state.logged_in = False
+            st.rerun()
 
-    # --- HEADER ---
     l_html = f'<img src="data:image/png;base64,{logo_puo}" width="80">' if logo_puo else ""
     st.markdown(f'<div class="header-container"><div class="header-logo">{l_html}</div><div class="header-text"><h1>SISTEM SURVEY LOT</h1><p>Jabatan Kejuruteraan Awam | Politeknik Ungku Omar</p></div></div>', unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
-    with col1: epsg = st.text_input("EPSG", "4390")
-    with col2: file = st.file_uploader("Upload CSV", type="csv")
+    with col1: epsg = st.text_input("Sistem Koordinat (EPSG)", "4390")
+    with col2: file = st.file_uploader("Muat Naik Fail CSV", type="csv")
 
     if file:
         df = pd.read_csv(file)
@@ -132,6 +141,7 @@ def main_app():
         e, n = df['E'].values, df['N'].values
         area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
         dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
+        brg_list = [(np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360) for i in range(len(df))]
 
         tab1, tab2 = st.tabs(["🌍 Peta Interaktif", "📋 Jadual Data"])
         
@@ -150,65 +160,62 @@ def main_app():
             for i in range(len(df)):
                 stn_name = str(df['STN'].iloc[i])
                 next_i = (i + 1) % len(df)
-                brg = np.degrees(np.arctan2((e[next_i]-e[i]), (n[next_i]-n[i]))) % 360
                 
-                # --- POPUP BULAT (CIRCLE BUBBLE) ---
                 popup_html = f"""
-                <div style="
-                    background-color: white; 
-                    border: 3px solid #d9534f; 
-                    border-radius: 50%; 
-                    width: 140px; 
-                    height: 140px; 
-                    display: flex; 
-                    flex-direction: column; 
-                    justify-content: center; 
-                    align-items: center; 
-                    text-align: center; 
-                    font-family: 'Arial Black', sans-serif;
-                    box-shadow: 0 4px 10px rgba(0,0,0,0.3);
-                    padding: 5px;
-                ">
+                <div style="background-color: white; border: 3px solid #d9534f; border-radius: 50%; width: 140px; height: 140px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: 'Arial Black', sans-serif; padding: 5px;">
                     <span style="color:#d9534f; font-size:16px;">STN {stn_name}</span>
                     <hr style="width: 70%; margin: 3px; border: 1px solid #eee;">
                     <span style="font-size:11px;">Ke: {df['STN'].iloc[next_i]}</span>
-                    <span style="font-size:12px; color: #1a1a1a;">{to_dms(brg)}</span>
+                    <span style="font-size:12px; color: #1a1a1a;">{to_dms(brg_list[i])}</span>
                     <span style="font-size:12px; color: #1a1a1a;">{dist_list[i]:.3f}m</span>
                 </div>
                 """
                 
-                # TITIK MERAH (Point Utama) + HITBOX BESAR
                 folium.CircleMarker(
                     [lats[i], lons[i]], 
-                    radius=saiz_m/4, 
-                    color="red", 
-                    fill=True, 
-                    fill_opacity=0.9,
-                    weight=15, # Ini buat hitbox sekeliling titik jadi besar gila, senang klik
-                    opacity=0, # Hitbox halimunan
+                    radius=saiz_m/4, color="red", fill=True, fill_opacity=0.9, weight=15, opacity=0,
                     popup=folium.Popup(popup_html, max_width=200),
                     tooltip=f"KLIK STN {stn_name}"
                 ).add_to(fg_stn)
                 
-                # NOMBOR STESEN
                 folium.Marker(
                     [lats[i], lons[i]], 
                     icon=folium.DivIcon(html=f'<div style="color:white; font-weight:bold; font-size:12pt; text-shadow:2px 2px black; width:30px; text-align:center;">{stn_name}</div>')
                 ).add_to(fg_stn)
                 
-                # LABEL KUNING KAT GARISAN
                 mid = [(lats[i]+lats[next_i])/2, (lons[i]+lons[next_i])/2]
-                label_txt = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center; width:150px;">{to_dms(brg)}<br>{dist_list[i]:.3f}m</div>'
+                label_txt = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center; width:150px;">{to_dms(brg_list[i])}<br>{dist_list[i]:.3f}m</div>'
                 folium.Marker(mid, icon=folium.DivIcon(html=label_txt)).add_to(fg_lbl)
 
-            # Info Luas (Tengah)
             folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='info-sign'), 
-                          popup=f"Luas: {area:.3f} m²\nSurveyor: {st.session_state.current_user}").add_to(m)
+                         popup=f"Luas: {area:.3f} m²").add_to(m)
 
             folium.LayerControl(position='topright', collapsed=False).add_to(m)
             st_folium(m, width=1100, height=600)
 
-        # BUTTON EXPORT QGIS
+        # --- TAB 2: JADUAL DATA ---
+        with tab2:
+            st.subheader("📋 Ringkasan Data Ukuran")
+            
+            # Bina DataFrame baru untuk paparan jadual
+            data_jadual = []
+            for i in range(len(df)):
+                next_i = (i + 1) % len(df)
+                data_jadual.append({
+                    "Dari STN": df['STN'].iloc[i],
+                    "Ke STN": df['STN'].iloc[next_i],
+                    "Easting (E)": f"{df['E'].iloc[i]:.3f}",
+                    "Northing (N)": f"{df['N'].iloc[i]:.3f}",
+                    "Bearing": to_dms(brg_list[i]),
+                    "Jarak (m)": f"{dist_list[i]:.3f}"
+                })
+            
+            df_display = pd.DataFrame(data_jadual)
+            st.table(df_display) # Menggunakan st.table untuk paparan statik yang kemas
+            
+            st.info(f"📐 **Jumlah Luas Lot:** {area:.3f} meter persegi")
+
+        # BUTTON EXPORT
         geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i]), "E": float(e[i]), "N": float(n[i])}} for i in range(len(df))]})
         st.download_button("🚀 EXPORT KE QGIS (GEOJSON)", data=geojson_data, file_name=f"survey_{st.session_state.current_user}.geojson", use_container_width=True)
 
