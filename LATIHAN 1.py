@@ -87,6 +87,7 @@ def main_app():
         saiz_marker = st.slider("Saiz Marker Stesen", 5, 50, 38)
         saiz_teks = st.slider("Saiz Bearing/Jarak", 10, 30, 23)
         warna_poli = st.color_picker("Warna Poligon", "#FFFF00")
+        
         if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
@@ -112,29 +113,47 @@ def main_app():
             tab1, tab2, tab3 = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal", "📋 Senarai Koordinat"])
             
             with tab1:
-                m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20)
-                folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Hybrid', max_zoom=24).add_to(m)
+                # Inisialisasi peta (Asas: OpenStreetMap)
+                m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=20, control_scale=True)
                 
-                points = list(zip(lats, lons))
-                folium.Polygon(locations=points + [points[0]], color=warna_poli, weight=3, fill=True, fill_opacity=0.3).add_to(m)
+                # --- TAMBAH GOOGLE SATELITE DENGAN BUTTON ON/OFF ---
+                folium.TileLayer(
+                    tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', 
+                    attr='Google', 
+                    name='Google Satellite', 
+                    max_zoom=24,
+                    overlay=False, # Set False supaya ia jadi Base Map pilihan
+                    control=True
+                ).add_to(m)
 
-                # --- POPUP SETIAP STESEN (MODIFIKASI BARU) ---
+                # Tambah OpenStreetMap sebagai pilihan kedua
+                folium.TileLayer('openstreetmap', name='OpenStreetMap').add_to(m)
+
+                points = list(zip(lats, lons))
+                folium.Polygon(
+                    locations=points + [points[0]], 
+                    color=warna_poli, 
+                    weight=3, 
+                    fill=True, 
+                    fill_opacity=0.3,
+                    name="Sempadan Lot"
+                ).add_to(m)
+
+                # --- POPUP SETIAP STESEN ---
                 for i in range(len(df)):
                     p_lat, p_lon = lats[i], lons[i]
                     stn_name = str(df['STN'].iloc[i]) if 'STN' in df.columns else str(i+1)
                     val_e = df['E'].iloc[i]
                     val_n = df['N'].iloc[i]
 
-                    # HTML untuk Popup sebijik macam rujukan
                     stn_popup_html = f"""
-                    <div style="font-family: Arial; font-size: 12pt; min-width: 150px;">
-                        <b>STESEN {stn_name}</b><br>
-                        E: {val_e:.3f}<br>
-                        N: {val_n:.3f}
+                    <div style="font-family: Arial; font-size: 11pt; min-width: 140px;">
+                        <b style="color:red;">STESEN {stn_name}</b><br>
+                        <b>E:</b> {val_e:.3f}<br>
+                        <b>N:</b> {val_n:.3f}
                     </div>
                     """
                     
-                    # Marker Stesen Merah dengan Popup
                     folium.CircleMarker(
                         [p_lat, p_lon], 
                         radius=saiz_marker/4, 
@@ -144,13 +163,12 @@ def main_app():
                         popup=folium.Popup(stn_popup_html, max_width=250)
                     ).add_to(m)
 
-                    # Nombor Stesen di atas marker
                     folium.Marker(
                         [p_lat, p_lon], 
                         icon=folium.DivIcon(html=f"<div style='color:white; font-weight:bold; font-size:10pt; transform:translate(-3px,-7px); pointer-events:none;'>{stn_name}</div>")
                     ).add_to(m)
 
-                    # --- LABEL BEARING & JARAK (KUNING) ---
+                    # --- LABEL BEARING & JARAK ---
                     next_i = (i + 1) % len(df)
                     p1, p2 = [lats[i], lons[i]], [lats[next_i], lons[next_i]]
                     dist = dist_list[i]
@@ -160,9 +178,12 @@ def main_app():
                     label_html = f'<div style="color:#FFFF00; font-size:{saiz_teks}pt; text-shadow:2px 2px #000; font-weight:bold; text-align:center;">{to_dms(brg)}<br>{dist:.3f}m</div>'
                     folium.Marker([m_lat, m_lon], icon=folium.DivIcon(html=label_html)).add_to(m)
 
-                # Info Lot Utama (Popup Surveyor)
+                # Info Lot Utama (Marker Home)
                 lot_info_html = f"<div style='width:160px;'><b>📍 Info Lot</b><br>Surveyor: FARZAT<br>Luas: {area:.3f} m²<br>Perimeter: {perimeter:.3f} m</div>"
                 folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='home'), popup=folium.Popup(lot_info_html)).add_to(m)
+
+                # --- LAYER CONTROL (BUTANG ON/OFF) ---
+                folium.LayerControl(position='topright', collapsed=False).add_to(m)
 
                 st_folium(m, width=1100, height=600)
 
@@ -170,9 +191,15 @@ def main_app():
                 fig, ax = plt.subplots(figsize=(8, 8))
                 ax.plot(list(e) + [e[0]], list(n) + [n[0]], color='blue', marker='o', mfc='red')
                 ax.set_aspect('equal')
+                ax.grid(True, linestyle='--', alpha=0.6)
+                ax.set_title(f"Pelan Teknikal Lot (Luas: {area:.2f} m²)")
                 st.pyplot(fig)
+            
+            with tab3:
+                st.subheader("📋 Jadual Data Koordinat")
+                st.dataframe(df, use_container_width=True)
 
-            st.download_button("🚀 EXPORT KE QGIS", data=json.dumps({"type": "FeatureCollection", "features": []}), file_name="survey_farzat.geojson", use_container_width=True)
+            st.download_button("🚀 EXPORT KE QGIS (GEOJSON)", data=json.dumps({"type": "FeatureCollection", "features": []}), file_name="survey_farzat.geojson", use_container_width=True)
 
 if st.session_state.logged_in: main_app()
 else: login_page()
