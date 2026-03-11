@@ -7,11 +7,20 @@ import folium
 from folium.plugins import MiniMap
 from streamlit_folium import st_folium
 from pyproj import Transformer
+import base64
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="PUO Survey Lot Visualizer", layout="wide")
+st.set_page_config(page_title="Sistem Survey Lot", layout="wide")
 
-# --- FUNGSI PEMBANTU ---
+# Fungsi untuk menukar imej ke format Base64
+def get_base64_image(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except:
+        return None
+
+# FUNGSI PEMBANTU
 def to_dms(deg):
     d = int(deg)
     m = int((deg - d) * 60)
@@ -27,17 +36,22 @@ def transform_coords(df, epsg_code):
         st.error(f"Ralat Transform: {e}")
         return None, None
 
-# --- PENGURUSAN SESSION STATE ---
+# PENGURUSAN SESSION STATE
 if 'logged_in' not in st.session_state:
     st.session_state.logged_in = False
 
-# --- HALAMAN LOG MASUK ---
+# HALAMAN LOG MASUK
 def login_page():
     col1, col2, col3 = st.columns([1,2,1])
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
-        st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
-        st.title("Sistem Lot Ukur PUO")
+        # Sila pastikan fail logo anda dinamakan 'PUO_Logo.png'
+        try:
+            st.image("PUO_Logo.png", width=150)
+        except:
+            st.image("https://www.puo.edu.my/wp-content/uploads/2021/08/cropped-LOGO-PUO-1.png", width=150)
+            
+        st.title("Sistem Lot Ukur")
         user_id = st.text_input("ID Pengguna")
         password = st.text_input("Kata Laluan", type='password')
         if st.button("Log Masuk", use_container_width=True):
@@ -47,7 +61,7 @@ def login_page():
             else:
                 st.error("ID atau Kata Laluan salah!")
 
-# --- HALAMAN UTAMA (APLIKASI) ---
+# HALAMAN UTAMA (APLIKASI)
 def main_app():
     with st.sidebar:
         st.markdown(f"""
@@ -65,19 +79,27 @@ def main_app():
         warna_poli = st.color_picker("Warna Isi Poligon", "#FFFF00")
         
         st.markdown("---")
-        st.subheader("💾 Eksport Data")
-        
         if st.button("🚪 Log Keluar", use_container_width=True):
             st.session_state.logged_in = False
             st.rerun()
 
-    st.markdown("""
-        <div style='border-left: 5px solid #007bff; padding-left: 20px;'>
-            <h1 style='margin-bottom: 0px;'>SISTEM SURVEY LOT + GOOGLE MAPS</h1>
-            <p style='color: #6c757d;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
+    # --- TAJUK UTAMA (HANYA SISTEM SURVEY LOT) ---
+    encoded_logo = get_base64_image("PUO_Logo.png")
+    
+    logo_html = f"<img src='data:image/png;base64,{encoded_logo}' width='90'>" if encoded_logo else ""
+    
+    st.markdown(f"""
+        <div style='display: flex; align-items: center; gap: 20px; border-left: 5px solid #007bff; padding: 5px 20px;'>
+            {logo_html}
+            <div>
+                <h1 style='margin: 0; font-size: 35px; letter-spacing: 1px;'>SISTEM SURVEY LOT</h1>
+                <p style='color: #6c757d; margin: 0; font-size: 14px;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
+            </div>
         </div>
+        <br>
     """, unsafe_allow_html=True)
 
+    # Bahagian Input
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
         kod_epsg = st.text_input("🟢 Kod EPSG (RSO: 4390):", value="4390")
@@ -89,13 +111,9 @@ def main_app():
         
         if 'E' in df.columns and 'N' in df.columns:
             e, n = df['E'].values, df['N'].values
-            
-            # Pengiraan Luas & Perimeter
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
             distances = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
             perimeter = sum(distances)
-            
-            # Menukar koordinat untuk jadual dan peta
             lats, lons = transform_coords(df, kod_epsg)
 
             tab_map, tab_plot, tab_data = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal", "📋 Senarai Koordinat"])
@@ -139,24 +157,12 @@ def main_app():
 
             with tab_data:
                 st.subheader("📋 Jadual Koordinat Stesen")
-                # Bina DataFrame baru untuk paparan koordinat
                 coord_df = pd.DataFrame({
                     'STN': df['STN'] if 'STN' in df.columns else range(1, len(df)+1),
-                    'Northing (N)': n,
-                    'Easting (E)': e,
-                    'Latitude': lats,
-                    'Longitude': lons
+                    'Northing (N)': n, 'Easting (E)': e,
+                    'Latitude': lats, 'Longitude': lons
                 })
-                st.dataframe(coord_df.style.format({
-                    'Northing (N)': '{:.3f}', 
-                    'Easting (E)': '{:.3f}', 
-                    'Latitude': '{:.8f}', 
-                    'Longitude': '{:.8f}'
-                }), use_container_width=True)
-                
-                # Tambah butang download untuk jadual ini
-                csv_coords = coord_df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Muat Turun Jadual Koordinat (CSV)", data=csv_coords, file_name="koordinat_stesen_farzat.csv", mime="text/csv")
+                st.dataframe(coord_df.style.format({'Northing (N)': '{:.3f}', 'Easting (E)': '{:.3f}', 'Latitude': '{:.8f}', 'Longitude': '{:.8f}'}), use_container_width=True)
 
             # Bagian Sidebar Download GeoJSON
             geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
@@ -170,7 +176,7 @@ def main_app():
             c3.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
             
         else:
-            st.error("Sila pastikan fail CSV mempunyai kolum 'E' dan 'N'.")
+            st.error("Format CSV salah. Perlu kolum E dan N.")
 
 # JALANKAN APP
 if st.session_state.logged_in:
