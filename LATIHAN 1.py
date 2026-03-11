@@ -19,7 +19,7 @@ def to_dms(deg):
 
 def transform_coords(df, epsg_code):
     try:
-        # Menukar koordinat RSO/Tempatan ke WGS84 untuk paparan peta
+        # EPSG:4390 (RSO Borneo) atau kod lain ke WGS84
         transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
         lon, lat = transformer.transform(df['E'].values, df['N'].values)
         return lat, lon
@@ -77,7 +77,7 @@ def main_app():
 
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
-        kod_epsg = st.text_input("🟢 Kod EPSG (Contoh: 4390 untuk RSO):", value="4390")
+        kod_epsg = st.text_input("🟢 Kod EPSG (Contoh: 4390):", value="4390")
     with col_upload:
         uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
 
@@ -86,27 +86,57 @@ def main_app():
         
         if 'E' in df.columns and 'N' in df.columns:
             e, n = df['E'].values, df['N'].values
+            # Pengiraan Luas (Traverse)
             area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
             
-            tab_map, tab_plot = st.tabs(["🌍 Peta Interaktif", "📊 Lukisan Teknikal"])
+            tab_map, tab_plot = st.tabs(["🌍 Peta Interaktif (Ultra Zoom)", "📊 Lukisan Teknikal"])
 
             with tab_map:
                 lats, lons = transform_coords(df, kod_epsg)
                 
                 if lats is not None:
-                    # Mulakan peta tanpa tiles default
-                    m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=19, tiles=None)
+                    # Inisialisasi peta dengan max_zoom tinggi (tahap 22)
+                    m = folium.Map(
+                        location=[np.mean(lats), np.mean(lons)], 
+                        zoom_start=19, 
+                        tiles=None,
+                        max_zoom=22 
+                    )
                     
-                    # --- PILIHAN LAPISAN GOOGLE ---
+                    # URL Google Tiles
                     google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
                     google_streets = 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}'
                     google_hybrid = 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
 
-                    folium.TileLayer(tiles=google_streets, attr='Google', name='Google Street Map', overlay=False).add_to(m)
-                    folium.TileLayer(tiles=google_sat, attr='Google', name='Google Satellite', overlay=False).add_to(m)
-                    folium.TileLayer(tiles=google_hybrid, attr='Google', name='Google Hybrid', overlay=False).add_to(m)
+                    # Tambah Layer dengan sokongan zum tinggi
+                    folium.TileLayer(
+                        tiles=google_sat, 
+                        attr='Google Satellite', 
+                        name='Google Satellite', 
+                        max_zoom=22, 
+                        max_native_zoom=20, 
+                        overlay=False
+                    ).add_to(m)
+
+                    folium.TileLayer(
+                        tiles=google_streets, 
+                        attr='Google Streets', 
+                        name='Google Street Map', 
+                        max_zoom=22, 
+                        max_native_zoom=20, 
+                        overlay=False
+                    ).add_to(m)
+
+                    folium.TileLayer(
+                        tiles=google_hybrid, 
+                        attr='Google Hybrid', 
+                        name='Google Hybrid (Satelit + Jalan)', 
+                        max_zoom=22, 
+                        max_native_zoom=20, 
+                        overlay=False
+                    ).add_to(m)
                     
-                    # 1. Lukis Poligon
+                    # Lukis Poligon
                     points = list(zip(lats, lons))
                     points_closed = points + [points[0]]
                     
@@ -119,38 +149,27 @@ def main_app():
                         fill_opacity=0.4
                     ).add_to(m)
                     
-                    # 2. Tambah Label Bering & Jarak
+                    # Label Bering & Jarak
                     for i in range(len(df)):
-                        p1 = [lats[i], lons[i]]
-                        next_idx = (i + 1) % len(df)
-                        p2 = [lats[next_idx], lons[next_idx]]
-                        
-                        dist = np.sqrt((e[next_idx]-e[i])**2 + (n[next_idx]-n[i])**2)
-                        brg = np.degrees(np.arctan2((e[next_idx]-e[i]), (n[next_idx]-n[i]))) % 360
-                        
-                        mid_lat = (p1[0] + p2[0]) / 2
-                        mid_lon = (p1[1] + p2[1]) / 2
+                        p1, p2 = [lats[i], lons[i]], [lats[(i+1)%len(df)], lons[(i+1)%len(df)]]
+                        dist = np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2)
+                        brg = np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360
                         
                         folium.Marker(
-                            [mid_lat, mid_lon],
+                            [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2],
                             icon=folium.DivIcon(
                                 html=f"""<div style="font-family: Arial; color: #00FF00; font-weight: bold; font-size: {saiz_teks}pt; 
-                                white-space: nowrap; text-shadow: 2px 2px #000; text-align: center; transform: translate(-50%, -50%);">
+                                text-shadow: 2px 2px #000; text-align: center; transform: translate(-50%, -50%);">
                                 {to_dms(brg)}<br>{dist:.2f}m</div>"""
                             )
                         ).add_to(m)
 
-                    # 3. Tambah Marker Stesen
+                    # Marker Stesen
                     for i, row in df.iterrows():
                         stn_id = str(row["STN"]) if "STN" in df.columns else str(i+1)
-                        
                         folium.CircleMarker(
                             location=[lats[i], lons[i]],
-                            radius=saiz_marker, 
-                            color="red", 
-                            fill=True, 
-                            fill_color="red", 
-                            fill_opacity=1
+                            radius=saiz_marker, color="red", fill=True, fill_color="red", fill_opacity=1
                         ).add_to(m)
                         
                         folium.Marker(
@@ -164,25 +183,18 @@ def main_app():
                             )
                         ).add_to(m)
 
-                    # Tambah Layer Control di penjuru kanan atas
                     folium.LayerControl(position='topright').add_to(m)
-
                     m.fit_bounds(points)
                     st_folium(m, width=1100, height=600, returned_objects=[])
 
             with tab_plot:
                 fig, ax = plt.subplots(figsize=(10, 8))
-                e_plot = list(e) + [e[0]]
-                n_plot = list(n) + [n[0]]
-                ax.plot(e_plot, n_plot, marker='o', color='black', linewidth=2)
-                ax.fill(e_plot, n_plot, color=warna_poli, alpha=0.3)
-                
-                # Label stesen pada plot Matplotlib
+                e_p, n_p = list(e)+[e[0]], list(n)+[n[0]]
+                ax.plot(e_p, n_p, marker='o', color='black', linewidth=2)
+                ax.fill(e_p, n_p, color=warna_poli, alpha=0.3)
                 for i, txt in enumerate(df['STN'] if 'STN' in df.columns else range(len(df))):
-                    ax.annotate(txt, (e[i], n[i]), textcoords="offset points", xytext=(0,10), ha='center', fontweight='bold')
-                
+                    ax.annotate(txt, (e[i], n[i]), xytext=(0,10), textcoords="offset points", ha='center', fontweight='bold')
                 ax.set_aspect('equal')
-                ax.set_title("Lukisan Teknikal Lot", fontsize=14)
                 ax.grid(True, linestyle='--', alpha=0.6)
                 st.pyplot(fig)
 
@@ -191,21 +203,10 @@ def main_app():
             c1.metric("Luas (m²)", f"{area:.3f}")
             c2.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
             
-            # GeoJSON Export
-            geojson_data = json.dumps({
-                "type": "FeatureCollection", 
-                "features": [{
-                    "type": "Feature", 
-                    "geometry": {
-                        "type": "Polygon", 
-                        "coordinates": [list(zip(e, n))]
-                    },
-                    "properties": {"area_m2": area}
-                }]
-            })
+            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
             c3.download_button("📥 Download GeoJSON", data=geojson_data, file_name="survey_export.geojson", use_container_width=True)
         else:
-            st.error("Fail CSV mesti mempunyai kolum 'E' dan 'N'!")
+            st.error("Format CSV salah. Perlu kolum E dan N.")
 
 # JALANKAN APP
 if st.session_state.logged_in:
