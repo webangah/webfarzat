@@ -17,14 +17,15 @@ def to_dms(deg):
     s = int((deg - d - m/60) * 3600)
     return f"{d}°{m}'{s}\""
 
-# Fungsi tukar koordinat ke Lat/Lon untuk Google Maps
 def transform_coords(df, epsg_code):
     try:
-        # Tukar dari EPSG pilihan (cth: 3168 untuk RSO) ke WGS84 (Lat/Lon)
+        # EPSG:4390 ke EPSG:4326 (WGS84 Lat/Lon)
+        # always_xy=True memastikan E=X dan N=Y
         transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
         lon, lat = transformer.transform(df['E'].values, df['N'].values)
         return lat, lon
-    except:
+    except Exception as e:
+        st.error(f"Ralat Transform: {e}")
         return None, None
 
 # --- PENGURUSAN SESSION STATE ---
@@ -46,10 +47,10 @@ def login_page():
             else:
                 st.error("ID atau Kata Laluan salah!")
 
-# --- HALAMAN UTAMA (APLIKASI) ---
+# --- HALAMAN UTAMA ---
 def main_app():
     with st.sidebar:
-        st.markdown(f"""
+        st.markdown("""
         <div style='background-color: #0099ff; padding: 20px; border-radius: 15px; text-align: center; color: white; margin-bottom: 20px;'>
             <img src='https://cdn-icons-png.flaticon.com/512/3135/3135715.png' width='80' style='filter: brightness(0) invert(1);'>
             <h2 style='margin: 10px 0 0 0;'>Hai, FARZAT!</h2>
@@ -67,17 +68,16 @@ def main_app():
             st.session_state.logged_in = False
             st.rerun()
 
-    # --- HEADER ---
     st.markdown("""
         <div style='border-left: 5px solid #007bff; padding-left: 20px;'>
-            <h1 style='margin-bottom: 0px;'>SISTEM SURVEY LOT + GOOGLE SATELLITE</h1>
+            <h1 style='margin-bottom: 0px;'>SISTEM SURVEY LOT</h1>
             <p style='color: #6c757d;'>Politeknik Ungku Omar | Jabatan Kejuruteraan Awam</p>
         </div>
     """, unsafe_allow_html=True)
 
     col_epsg, col_upload = st.columns(2)
     with col_epsg:
-        kod_epsg = st.text_input("🟢 Kod EPSG (Contoh: 3168 untuk RSO Semenanjung):", value="3168")
+        kod_epsg = st.text_input("🟢 Kod EPSG:", value="4390")
     with col_upload:
         uploaded_file = st.file_uploader("📁 Muat naik fail CSV (STN, E, N)", type="csv")
 
@@ -85,140 +85,3 @@ def main_app():
         df = pd.read_csv(uploaded_file)
         
         if 'E' in df.columns and 'N' in df.columns:
-            # Pengiraan Luas
-            e, n = df['E'].values, df['N'].values
-            area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
-            
-            # --- TAB PAPARAN ---
-            tab_map, tab_plot = st.tabs(["🌍 Peta Satelit (Google)", "📊 Lukisan Teknikal (Matplotlib)"])
-
-            with tab_map:
-                st.subheader("Paparan Google Satellite")
-                lats, lons = transform_coords(df, kod_epsg)
-                
-                if lats is not None:
-                    # Setup Folium Map
-                    m = folium.Map(location=[np.mean(lats), np.mean(lons)], zoom_start=18)
-                    
-                    # Tambah Google Satellite Layer
-                    google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-                    folium.TileLayer(tiles=google_sat, attr='Google', name='Google Satellite', overlay=False, control=True).add_to(m)
-                    
-                    # Lukis Poligon
-                    points = list(zip(lats, lons))
-                    points.append(points[0]) # Tutup poligon
-                    folium.Polygon(locations=points, color="white", weight=2, fill=True, fill_color=warna_poli, fill_opacity=0.4).add_to(m)
-                    
-                    # Tambah Marker Stesen
-                    for i, row in df.iterrows():
-                        folium.CircleMarker(location=[lats[i], lons[i]], radius=5, color="red", fill=True).add_to(m)
-                        folium.Marker([lats[i], lons[i]], icon=folium.DivIcon(html=f'<div style="font-size: 10pt; color: white; font-weight: bold;">{row["STN"] if "STN" in df.columns else i+1}</div>')).add_to(m)
-
-                    st_folium(m, width=1000, height=500)
-                else:
-                    st.warning("Gagal menukar koordinat. Sila pastikan Kod EPSG betul.")
-
-            with tab_plot:
-                # (Kod Matplotlib asal anda dikekalkan di sini)
-                fig, ax = plt.subplots(figsize=(10, 8))
-                coords = list(zip(e, n))
-                coords.append(coords[0])
-                e_p, n_p = zip(*coords)
-                ax.plot(e_p, n_p, marker='o', color='black', markersize=saiz_marker/4)
-                ax.fill(e_p, n_p, color=warna_poli, alpha=0.5)
-                st.pyplot(fig)
-
-            # Info Luas di bawah
-            st.markdown("---")
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Luas (m²)", f"{area:.3f}")
-            c2.metric("Luas (Ekar)", f"{area * 0.000247105:.4f}")
-            
-            geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [list(zip(e, n))]}}]})
-            c3.download_button("📥 Download GeoJSON", data=geojson_data, file_name="survey_farzat.geojson", use_container_width=True)
-
-# JALANKAN APP
-if st.session_state.logged_in:
-    main_app()
-else:
-    login_page()# --- KEMASKINI FUNGSI TRANSFORM ---
-def transform_coords(df, epsg_code):
-    try:
-        # Kita guna pyproj untuk tukar koordinat meter (RSO/Cassini) ke Lat/Lon
-        # 'always_xy=True' memastikan E=X dan N=Y
-        transformer = Transformer.from_crs(f"EPSG:{epsg_code}", "EPSG:4326", always_xy=True)
-        
-        # Ambil data E dan N
-        e_vals = df['E'].values
-        n_vals = df['N'].values
-        
-        # Tukar koordinat
-        lon, lat = transformer.transform(e_vals, n_vals)
-        
-        # Semak jika hasil penukaran adalah munasabah (Lat Malaysia antara 1 hingga 7)
-        if np.isnan(lat).any() or np.mean(lat) < -90 or np.mean(lat) > 90:
-            return None, None
-            
-        return lat, lon
-    except Exception as e:
-        st.error(f"Ralat Transform: {e}")
-        return None, None
-
-# --- DALAM main_app() BAHAGIAN tab_map ---
-with tab_map:
-    st.subheader("Paparan Google Satellite")
-    lats, lons = transform_coords(df, kod_epsg)
-    
-    if lats is not None and not np.isnan(lats).any():
-        # Setup Folium Map - Zoom ke purata koordinat
-        center_lat = np.mean(lats)
-        center_lon = np.mean(lons)
-        m = folium.Map(location=[center_lat, center_lon], zoom_start=18, control_scale=True)
-        
-        # Tambah Layer Google Satellite
-        google_sat = 'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}'
-        folium.TileLayer(
-            tiles=google_sat, 
-            attr='Google', 
-            name='Google Satellite', 
-            overlay=False, 
-            control=True
-        ).add_to(m)
-        
-        # Lukis Poligon
-        points = list(zip(lats, lons))
-        points.append(points[0]) # Tutup poligon
-        
-        folium.Polygon(
-            locations=points, 
-            color="white", 
-            weight=3, 
-            fill=True, 
-            fill_color=warna_poli, 
-            fill_opacity=0.5
-        ).add_to(m)
-        
-        # Tambah Marker & Label Nombor Stesen
-        for i, row in df.iterrows():
-            folium.CircleMarker(
-                location=[lats[i], lons[i]], 
-                radius=4, 
-                color="red", 
-                fill=True,
-                fill_color="yellow"
-            ).add_to(m)
-            
-            # Label nombor stesen yang lebih jelas
-            stn_label = str(row["STN"]) if "STN" in df.columns else str(i+1)
-            folium.Marker(
-                [lats[i], lons[i]], 
-                icon=folium.DivIcon(html=f"""<div style="font-family: sans-serif; color: white; font-weight: bold; background-color: rgba(0,0,0,0.5); padding: 2px; border-radius: 3px; font-size: 9pt;">{stn_label}</div>""")
-            ).add_to(m)
-
-        # Autozoom ke poligon
-        m.fit_bounds(points)
-        
-        st_folium(m, width=1100, height=600, returned_objects=[])
-    else:
-        st.error("❌ Peta tidak dapat dipaparkan. Kod EPSG mungkin salah atau koordinat CSV tidak sah.")
-        st.info("Tip: Untuk Semenanjung Malaysia, cuba gunakan EPSG:3168 atau 3375.")
