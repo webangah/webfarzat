@@ -31,7 +31,6 @@ if wallpaper_data:
                               url("data:image/jpg;base64,{wallpaper_data}");
             background-size: cover; background-position: center; background-attachment: fixed;
         }}
-        /* Menghilangkan kotak putih pada input login */
         [data-testid="stVerticalBlock"] > div:has(input) {{
             background-color: rgba(255, 255, 255, 0.2); 
             padding: 20px; 
@@ -80,7 +79,6 @@ def login_page():
         if logo_puo: 
             st.markdown(f'<center><img src="data:image/png;base64,{logo_puo}" width="220"></center>', unsafe_allow_html=True)
         
-        # Ruangan ini sekarang telus (Tanpa class login-box yang putih pekat)
         if st.session_state.recovery_active:
             st.subheader("🛠️ PEMULIHAN AKAUN")
             safe_word = st.text_input("Masukkan Kata Selamat", type="password")
@@ -139,6 +137,8 @@ def main_app():
         df = pd.read_csv(file)
         lats, lons = transform_coords(df, epsg)
         e, n = df['E'].values, df['N'].values
+        
+        # Pengiraan Luas, Jarak, Bearing
         area = 0.5 * np.abs(np.dot(e, np.roll(n, 1)) - np.dot(n, np.roll(e, 1)))
         dist_list = [np.sqrt((e[(i+1)%len(df)]-e[i])**2 + (n[(i+1)%len(df)]-n[i])**2) for i in range(len(df))]
         brg_list = [(np.degrees(np.arctan2((e[(i+1)%len(df)]-e[i]), (n[(i+1)%len(df)]-n[i]))) % 360) for i in range(len(df))]
@@ -193,11 +193,8 @@ def main_app():
             folium.LayerControl(position='topright', collapsed=False).add_to(m)
             st_folium(m, width=1100, height=600)
 
-        # --- TAB 2: JADUAL DATA ---
         with tab2:
             st.subheader("📋 Ringkasan Data Ukuran")
-            
-            # Bina DataFrame baru untuk paparan jadual
             data_jadual = []
             for i in range(len(df)):
                 next_i = (i + 1) % len(df)
@@ -209,15 +206,40 @@ def main_app():
                     "Bearing": to_dms(brg_list[i]),
                     "Jarak (m)": f"{dist_list[i]:.3f}"
                 })
-            
-            df_display = pd.DataFrame(data_jadual)
-            st.table(df_display) # Menggunakan st.table untuk paparan statik yang kemas
-            
+            st.table(pd.DataFrame(data_jadual))
             st.info(f"📐 **Jumlah Luas Lot:** {area:.3f} meter persegi")
 
-        # BUTTON EXPORT
-        geojson_data = json.dumps({"type": "FeatureCollection", "features": [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [lons[i], lats[i]]}, "properties": {"STN": str(df['STN'].iloc[i]), "E": float(e[i]), "N": float(n[i])}} for i in range(len(df))]})
-        st.download_button("🚀 EXPORT KE QGIS (GEOJSON)", data=geojson_data, file_name=f"survey_{st.session_state.current_user}.geojson", use_container_width=True)
+        # --- BAHAGIAN EXPORT GEOJSON (KEMASKINI) ---
+        features = []
+        for i in range(len(df)):
+            next_idx = (i + 1) % len(df)
+            point_feat = {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [float(lons[i]), float(lats[i])]
+                },
+                "properties": {
+                    "STN": str(df['STN'].iloc[i]),
+                    "Ke_STN": str(df['STN'].iloc[next_idx]),
+                    "Easting": float(e[i]),
+                    "Northing": float(n[i]),
+                    "Bearing": to_dms(brg_list[i]),
+                    "Jarak_m": round(float(dist_list[i]), 3),
+                    "Luas_m2": round(area, 3)
+                }
+            }
+            features.append(point_feat)
+
+        geojson_data = json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
+        
+        st.download_button(
+            label="🚀 EXPORT KE QGIS (GEOJSON)", 
+            data=geojson_data, 
+            file_name=f"survey_STN_Brg_Dist_{st.session_state.current_user}.geojson", 
+            mime="application/json",
+            use_container_width=True
+        )
 
 if st.session_state.logged_in: main_app()
 else: login_page()
