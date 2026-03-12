@@ -9,7 +9,7 @@ import base64
 from folium.plugins import Fullscreen
 
 # --- KONFIGURASI HALAMAN ---
-st.set_page_config(page_title="SISTEM SURVEY LOT", layout="wide")
+st.set_page_config(page_title="SISTEM SURVEY LOT - QGIS READY", layout="wide")
 
 def get_base64_image(image_path):
     try:
@@ -32,10 +32,10 @@ if wallpaper_data:
             background-size: cover; background-position: center; background-attachment: fixed;
         }}
         [data-testid="stVerticalBlock"] > div:has(input) {{
-            background-color: rgba(255, 255, 255, 0.2); 
+            background-color: rgba(255, 255, 255, 0.4); 
             padding: 20px; 
             border-radius: 15px;
-            backdrop-filter: blur(5px);
+            backdrop-filter: blur(10px);
         }}
         .header-container {{
             display: flex; align-items: center; background: white; padding: 15px;
@@ -150,9 +150,9 @@ def main_app():
             folium.TileLayer(tiles='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', attr='Google', name='Google Satellite', max_zoom=28, max_native_zoom=20).add_to(m)
             Fullscreen().add_to(m)
             
-            fg_stn = folium.FeatureGroup(name="Titik & No STN").add_to(m)
+            fg_stn = folium.FeatureGroup(name="Batu Sempadan (STN)").add_to(m)
             fg_lbl = folium.FeatureGroup(name="Bearing & Jarak").add_to(m)
-            fg_poly = folium.FeatureGroup(name="Sempadan").add_to(m)
+            fg_poly = folium.FeatureGroup(name="Kawasan Lot").add_to(m)
 
             points = list(zip(lats, lons))
             folium.Polygon(locations=points + [points[0]], color=warna_poly, weight=3, fill=True, fill_opacity=0.3).add_to(fg_poly)
@@ -161,21 +161,10 @@ def main_app():
                 stn_name = str(df['STN'].iloc[i])
                 next_i = (i + 1) % len(df)
                 
-                popup_html = f"""
-                <div style="background-color: white; border: 3px solid #d9534f; border-radius: 50%; width: 140px; height: 140px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; font-family: 'Arial Black', sans-serif; padding: 5px;">
-                    <span style="color:#d9534f; font-size:16px;">STN {stn_name}</span>
-                    <hr style="width: 70%; margin: 3px; border: 1px solid #eee;">
-                    <span style="font-size:11px;">Ke: {df['STN'].iloc[next_i]}</span>
-                    <span style="font-size:12px; color: #1a1a1a;">{to_dms(brg_list[i])}</span>
-                    <span style="font-size:12px; color: #1a1a1a;">{dist_list[i]:.3f}m</span>
-                </div>
-                """
-                
                 folium.CircleMarker(
                     [lats[i], lons[i]], 
-                    radius=saiz_m/4, color="red", fill=True, fill_opacity=0.9, weight=15, opacity=0,
-                    popup=folium.Popup(popup_html, max_width=200),
-                    tooltip=f"KLIK STN {stn_name}"
+                    radius=saiz_m/4, color="red", fill=True, fill_opacity=0.9, weight=2,
+                    tooltip=f"STN {stn_name}"
                 ).add_to(fg_stn)
                 
                 folium.Marker(
@@ -187,9 +176,6 @@ def main_app():
                 label_txt = f'<div style="color:yellow; font-size:{saiz_t}pt; font-weight:bold; text-shadow:2px 2px black; text-align:center; width:150px;">{to_dms(brg_list[i])}<br>{dist_list[i]:.3f}m</div>'
                 folium.Marker(mid, icon=folium.DivIcon(html=label_txt)).add_to(fg_lbl)
 
-            folium.Marker([np.mean(lats), np.mean(lons)], icon=folium.Icon(color='blue', icon='info-sign'), 
-                         popup=f"Luas: {area:.3f} m²").add_to(m)
-
             folium.LayerControl(position='topright', collapsed=False).add_to(m)
             st_folium(m, width=1100, height=600)
 
@@ -199,64 +185,67 @@ def main_app():
             for i in range(len(df)):
                 next_i = (i + 1) % len(df)
                 data_jadual.append({
-                    "Dari STN": df['STN'].iloc[i],
-                    "Ke STN": df['STN'].iloc[next_i],
-                    "Easting (E)": f"{df['E'].iloc[i]:.3f}",
-                    "Northing (N)": f"{df['N'].iloc[i]:.3f}",
-                    "Bearing": to_dms(brg_list[i]),
-                    "Jarak (m)": f"{dist_list[i]:.3f}"
+                    "Dari STN": df['STN'].iloc[i], "Ke STN": df['STN'].iloc[next_i],
+                    "Easting (E)": f"{df['E'].iloc[i]:.3f}", "Northing (N)": f"{df['N'].iloc[i]:.3f}",
+                    "Bearing": to_dms(brg_list[i]), "Jarak (m)": f"{dist_list[i]:.3f}"
                 })
             st.table(pd.DataFrame(data_jadual))
             st.info(f"📐 **Jumlah Luas Lot:** {area:.3f} meter persegi")
 
-        # --- PROSES EXPORT GEOJSON (LENGKAP UNTUK QGIS) ---
-        features = []
+        # --- PROSES EXPORT GEOJSON (3 LAYER: POINT, LINE, POLYGON) ---
+        qgis_features = []
+        
+        # 1. LAYER POINT (Batu Sempadan)
         for i in range(len(df)):
-            next_idx = (i + 1) % len(df)
-            stn_asal = str(df['STN'].iloc[i])
-            stn_tuju = str(df['STN'].iloc[next_idx])
-            brg_teks = to_dms(brg_list[i])
-            dist_val = round(float(dist_list[i]), 3)
-
-            # 1. Tambah Titik (Point Feature)
-            features.append({
+            qgis_features.append({
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [float(lons[i]), float(lats[i])]},
                 "properties": {
-                    "INFO": "STESEN",
-                    "STN": stn_asal,
-                    "E": float(e[i]),
-                    "N": float(n[i]),
-                    "LUAS_LOT": f"{area:.3f} m2"
+                    "Layer": "Batu Sempadan",
+                    "STN": str(df['STN'].iloc[i]),
+                    "Easting": float(e[i]),
+                    "Northing": float(n[i])
                 }
             })
 
-            # 2. Tambah Garisan (LineString Feature) - Mengandungi Bearing & Jarak
-            features.append({
+        # 2. LAYER LINESTRING (Garisan Sempadan + Bearing + Jarak)
+        for i in range(len(df)):
+            next_idx = (i + 1) % len(df)
+            qgis_features.append({
                 "type": "Feature",
                 "geometry": {
                     "type": "LineString", 
-                    "coordinates": [
-                        [float(lons[i]), float(lats[i])], 
-                        [float(lons[next_idx]), float(lats[next_idx])]
-                    ]
+                    "coordinates": [[float(lons[i]), float(lats[i])], [float(lons[next_idx]), float(lats[next_idx])]]
                 },
                 "properties": {
-                    "INFO": "SEMPADAN",
-                    "DARI": stn_asal,
-                    "KE": stn_tuju,
-                    "BEARING": brg_teks,
-                    "JARAK": f"{dist_val}m",
-                    "LABEL": f"{brg_teks} | {dist_val}m"
+                    "Layer": "Garisan Sempadan",
+                    "Dari_STN": str(df['STN'].iloc[i]),
+                    "Ke_STN": str(df['STN'].iloc[next_idx]),
+                    "Bearing": to_dms(brg_list[i]),
+                    "Jarak_m": round(float(dist_list[i]), 3),
+                    "Label_Full": f"{to_dms(brg_list[i])} ({round(float(dist_list[i]), 3)}m)"
                 }
             })
 
-        geojson_out = json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
+        # 3. LAYER POLYGON (Kawasan Lot + Data Luas)
+        poly_coords = [[float(lons[i]), float(lats[i])] for i in range(len(df))]
+        poly_coords.append(poly_coords[0]) # Tutup polygon
+        qgis_features.append({
+            "type": "Feature",
+            "geometry": {"type": "Polygon", "coordinates": [poly_coords]},
+            "properties": {
+                "Layer": "Kawasan Lot",
+                "Luas_m2": round(area, 3),
+                "Pemilik": st.session_state.current_user
+            }
+        })
+
+        geojson_final = json.dumps({"type": "FeatureCollection", "features": qgis_features}, indent=4)
         
         st.download_button(
-            label="🚀 MUAT TURUN FAIL QGIS (GEOJSON)", 
-            data=geojson_out, 
-            file_name=f"survey_qgis_{st.session_state.current_user}.geojson", 
+            label="🚀 MUAT TURUN FAIL QGIS LENGKAP (GEOJSON)", 
+            data=geojson_final, 
+            file_name=f"Survey_Lengkap_{st.session_state.current_user}.geojson", 
             mime="application/json",
             use_container_width=True
         )
