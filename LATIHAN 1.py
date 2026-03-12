@@ -209,34 +209,54 @@ def main_app():
             st.table(pd.DataFrame(data_jadual))
             st.info(f"📐 **Jumlah Luas Lot:** {area:.3f} meter persegi")
 
-        # --- BAHAGIAN EXPORT GEOJSON (KEMASKINI) ---
+        # --- PROSES EXPORT GEOJSON (LENGKAP UNTUK QGIS) ---
         features = []
         for i in range(len(df)):
             next_idx = (i + 1) % len(df)
-            point_feat = {
+            stn_asal = str(df['STN'].iloc[i])
+            stn_tuju = str(df['STN'].iloc[next_idx])
+            brg_teks = to_dms(brg_list[i])
+            dist_val = round(float(dist_list[i]), 3)
+
+            # 1. Tambah Titik (Point Feature)
+            features.append({
+                "type": "Feature",
+                "geometry": {"type": "Point", "coordinates": [float(lons[i]), float(lats[i])]},
+                "properties": {
+                    "INFO": "STESEN",
+                    "STN": stn_asal,
+                    "E": float(e[i]),
+                    "N": float(n[i]),
+                    "LUAS_LOT": f"{area:.3f} m2"
+                }
+            })
+
+            # 2. Tambah Garisan (LineString Feature) - Mengandungi Bearing & Jarak
+            features.append({
                 "type": "Feature",
                 "geometry": {
-                    "type": "Point",
-                    "coordinates": [float(lons[i]), float(lats[i])]
+                    "type": "LineString", 
+                    "coordinates": [
+                        [float(lons[i]), float(lats[i])], 
+                        [float(lons[next_idx]), float(lats[next_idx])]
+                    ]
                 },
                 "properties": {
-                    "STN": str(df['STN'].iloc[i]),
-                    "Ke_STN": str(df['STN'].iloc[next_idx]),
-                    "Easting": float(e[i]),
-                    "Northing": float(n[i]),
-                    "Bearing": to_dms(brg_list[i]),
-                    "Jarak_m": round(float(dist_list[i]), 3),
-                    "Luas_m2": round(area, 3)
+                    "INFO": "SEMPADAN",
+                    "DARI": stn_asal,
+                    "KE": stn_tuju,
+                    "BEARING": brg_teks,
+                    "JARAK": f"{dist_val}m",
+                    "LABEL": f"{brg_teks} | {dist_val}m"
                 }
-            }
-            features.append(point_feat)
+            })
 
-        geojson_data = json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
+        geojson_out = json.dumps({"type": "FeatureCollection", "features": features}, indent=4)
         
         st.download_button(
-            label="🚀 EXPORT KE QGIS (GEOJSON)", 
-            data=geojson_data, 
-            file_name=f"survey_STN_Brg_Dist_{st.session_state.current_user}.geojson", 
+            label="🚀 MUAT TURUN FAIL QGIS (GEOJSON)", 
+            data=geojson_out, 
+            file_name=f"survey_qgis_{st.session_state.current_user}.geojson", 
             mime="application/json",
             use_container_width=True
         )
